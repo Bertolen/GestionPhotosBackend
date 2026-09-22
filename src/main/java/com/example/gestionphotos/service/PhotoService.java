@@ -52,6 +52,7 @@ public class PhotoService {
         // Sauvegarder le fichier
         String storedPath = fileStorageService.store(file);
         String fileName = Path.of(storedPath).getFileName().toString();
+        String uuid = extractUuidFromFilename(fileName);
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime creationDate = now;
         
@@ -67,7 +68,7 @@ public class PhotoService {
         }
         
         return new PhotoDto(
-            storedPath,
+            uuid,
             file.getOriginalFilename(),
             storedPath,
             fileName,
@@ -163,6 +164,35 @@ public class PhotoService {
     }
 
     /**
+     * Extrait l'UUID de 8 caractères du nom de fichier.
+     * Format attendu : {nom}_yyyy-MM-dd_HH-mm-ss_{UUID8}.{ext}
+     * 
+     * @param filename le nom du fichier
+     * @return l'UUID extrait, ou le nom complet en fallback
+     */
+    private String extractUuidFromFilename(String filename) {
+        // Enlever l'extension
+        int lastDot = filename.lastIndexOf('.');
+        String withoutExt = lastDot > 0 ? filename.substring(0, lastDot) : filename;
+        
+        // Trouver le dernier underscore
+        int lastUnderscore = withoutExt.lastIndexOf('_');
+        if (lastUnderscore < 0 || lastUnderscore >= withoutExt.length() - 1) {
+            return filename;
+        }
+        
+        // Extraire la partie après le dernier underscore
+        String uuidPart = withoutExt.substring(lastUnderscore + 1);
+        
+        // Vérifier que c'est bien un UUID de 8 caractères hexadécimaux
+        if (uuidPart.length() == 8 && uuidPart.matches("[a-f0-9]{8}")) {
+            return uuidPart;
+        }
+        
+        return filename;
+    }
+
+    /**
      * Convertit un chemin de fichier en PhotoDto.
      * 
      * @param path le chemin du fichier
@@ -173,6 +203,7 @@ public class PhotoService {
             Path rootPath = fileStorageService.getRootLocation();
             Path relativePath = rootPath.relativize(path);
             String fileName = path.getFileName().toString();
+            String uuid = extractUuidFromFilename(fileName);
             
             // Date de modification = date d'upload approximative
             LocalDateTime modifiedDate = Files.getLastModifiedTime(path)
@@ -181,7 +212,7 @@ public class PhotoService {
                     .toLocalDateTime();
             
             return new PhotoDto(
-                relativePath.toString(),
+                uuid,
                 fileName,
                 relativePath.toString(),
                 fileName,

@@ -45,6 +45,7 @@ class PhotoServiceTest {
     }
 
     private static final String TEST_STORED_PATH = "photos/2024/09/22/test_2024-09-22_12-30-45_ab123456.jpg";
+    private static final String TEST_UUID = "ab123456";
     private static final String TEST_ORIGINAL_NAME = "test.jpg";
     private static final String TEST_FILE_NAME = "test_2024-09-22_12-30-45_ab123456.jpg";
     private static final long TEST_SIZE = 1024L;
@@ -67,7 +68,7 @@ class PhotoServiceTest {
 
         // Assert
         assertNotNull(result);
-        assertEquals(TEST_STORED_PATH, result.id());
+        assertEquals(TEST_UUID, result.id());
         assertEquals(TEST_ORIGINAL_NAME, result.originalName());
         assertEquals(TEST_STORED_PATH, result.storedPath());
         assertEquals(TEST_FILE_NAME, result.fileName());
@@ -116,8 +117,9 @@ class PhotoServiceTest {
 
         // Assert
         assertEquals(2, result.size());
-        assertEquals(TEST_STORED_PATH + "_1", result.get(0).id());
-        assertEquals(TEST_STORED_PATH + "_2", result.get(1).id());
+        // Les UUIDs sont extraits des noms de fichiers : test_2024-09-22_12-30-45_ab123456_1 -> ab123456
+        assertEquals(TEST_UUID, result.get(0).id());
+        assertEquals(TEST_UUID, result.get(1).id());
     }
 
     @Test
@@ -140,6 +142,7 @@ class PhotoServiceTest {
 
         // Assert
         assertEquals(1, result.size());
+        assertEquals(TEST_UUID, result.get(0).id());
         verify(fileStorageService, times(1)).store(validFile);
         verify(fileStorageService, never()).store(emptyFile);
     }
@@ -205,15 +208,15 @@ class PhotoServiceTest {
     @Test
     void deletePhoto_shouldDeleteAndReturnTrue() throws IOException {
         // Arrange
-        PhotoDto photo = new PhotoDto(TEST_STORED_PATH, TEST_ORIGINAL_NAME, TEST_STORED_PATH,
+        PhotoDto photo = new PhotoDto(TEST_UUID, TEST_ORIGINAL_NAME, TEST_STORED_PATH,
                 TEST_FILE_NAME, TEST_SIZE, TEST_MIME_TYPE, LocalDateTime.now(), LocalDateTime.now());
 
         PhotoService spyService = spy(photoService);
-        doReturn(photo).when(spyService).getPhotoById(TEST_STORED_PATH);
+        doReturn(photo).when(spyService).getPhotoById(TEST_UUID);
         doNothing().when(fileStorageService).delete(TEST_STORED_PATH);
 
         // Act
-        boolean result = spyService.deletePhoto(TEST_STORED_PATH);
+        boolean result = spyService.deletePhoto(TEST_UUID);
 
         // Assert
         assertTrue(result);
