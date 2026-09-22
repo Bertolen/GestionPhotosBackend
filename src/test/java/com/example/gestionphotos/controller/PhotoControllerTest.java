@@ -27,6 +27,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import com.example.gestionphotos.dto.PhotoDto;
 import com.example.gestionphotos.service.FileStorageService;
+import com.example.gestionphotos.exception.DuplicatePhotoException;
+import com.example.gestionphotos.exception.MultiplePhotoUploadException;
 import com.example.gestionphotos.service.PhotoService;
 
 /**
@@ -112,6 +114,25 @@ class PhotoControllerTest {
     }
 
     @Test
+    void uploadPhoto_shouldReturnConflictWhenPhotoAlreadyExists() throws Exception {
+        // Arrange
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                TEST_ORIGINAL_NAME,
+                TEST_MIME_TYPE,
+                "test content".getBytes()
+        );
+        when(photoService.uploadPhoto(any()))
+                .thenThrow(new DuplicatePhotoException("La photo existe déjà"));
+
+        // Act & Assert
+        mockMvc.perform(multipart("/api/photos/upload")
+                        .file(file))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("La photo existe déjà"));
+    }
+
+    @Test
     void uploadPhoto_shouldReturnInternalServerErrorOnIOException() throws Exception {
         // Arrange
         MockMultipartFile file = new MockMultipartFile(
@@ -186,6 +207,28 @@ class PhotoControllerTest {
         mockMvc.perform(multipart("/api/photos/upload/multiple")
                         .file(file))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void uploadPhotos_shouldReturnAllResultsAndErrors() throws Exception {
+        // Arrange
+        MockMultipartFile file = new MockMultipartFile(
+                "files",
+                TEST_ORIGINAL_NAME,
+                TEST_MIME_TYPE,
+                "test content".getBytes()
+        );
+        when(photoService.uploadPhotos(any())).thenThrow(new MultiplePhotoUploadException(
+                List.of(testPhotoDto),
+                List.of(new DuplicatePhotoException("La photo existe déjà"))));
+
+        // Act & Assert
+        mockMvc.perform(multipart("/api/photos/upload/multiple")
+                        .file(file))
+                .andExpect(status().isMultiStatus())
+                .andExpect(jsonPath("$.uploadedPhotos.length()").value(1))
+                .andExpect(jsonPath("$.errors.length()").value(1))
+                .andExpect(jsonPath("$.errors[0].message").value("La photo existe déjà"));
     }
 
 

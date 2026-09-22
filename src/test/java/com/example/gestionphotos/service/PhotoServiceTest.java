@@ -1,6 +1,8 @@
 package com.example.gestionphotos.service;
 
 import com.example.gestionphotos.dto.PhotoDto;
+import com.example.gestionphotos.exception.DuplicatePhotoException;
+import com.example.gestionphotos.exception.MultiplePhotoUploadException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,6 +20,7 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
@@ -145,6 +148,37 @@ class PhotoServiceTest {
         assertEquals(TEST_UUID, result.get(0).id());
         verify(fileStorageService, times(1)).store(validFile);
         verify(fileStorageService, never()).store(emptyFile);
+    }
+
+    @Test
+    void uploadPhotos_shouldProcessAllFilesAndAggregateErrors() throws IOException {
+        // Arrange
+        MultipartFile duplicateFile = mock(MultipartFile.class);
+        MultipartFile validFile = mock(MultipartFile.class);
+        MultipartFile[] files = new MultipartFile[]{duplicateFile, validFile};
+
+        when(duplicateFile.isEmpty()).thenReturn(false);
+        when(duplicateFile.getSize()).thenReturn(TEST_SIZE);
+        when(duplicateFile.getContentType()).thenReturn(TEST_MIME_TYPE);
+        when(validFile.isEmpty()).thenReturn(false);
+        when(validFile.getSize()).thenReturn(TEST_SIZE);
+        when(validFile.getContentType()).thenReturn(TEST_MIME_TYPE);
+        when(validFile.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME);
+        when(fileStorageService.store(duplicateFile))
+                .thenThrow(new DuplicatePhotoException("La photo existe déjà"));
+        when(fileStorageService.store(validFile)).thenReturn(TEST_STORED_PATH);
+        when(fileStorageService.load(TEST_STORED_PATH)).thenReturn(Path.of(TEST_STORED_PATH));
+
+        // Act
+        MultiplePhotoUploadException exception = assertThrows(
+                MultiplePhotoUploadException.class,
+                () -> photoService.uploadPhotos(files));
+
+        // Assert
+        assertEquals(1, exception.getUploadedPhotos().size());
+        assertEquals(1, exception.getErrors().size());
+        verify(fileStorageService).store(duplicateFile);
+        verify(fileStorageService).store(validFile);
     }
 
     @Test

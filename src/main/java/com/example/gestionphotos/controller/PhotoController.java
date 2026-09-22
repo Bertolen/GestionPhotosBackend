@@ -26,6 +26,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.example.gestionphotos.dto.PhotoDto;
 import com.example.gestionphotos.service.FileStorageService;
+import com.example.gestionphotos.exception.DuplicatePhotoException;
+import com.example.gestionphotos.exception.MultiplePhotoUploadException;
 import com.example.gestionphotos.service.PhotoService;
 
 /**
@@ -55,7 +57,7 @@ public class PhotoController {
     * @return ResponseEntity avec le PhotoDto de la photo sauvegardée
     */
     @PostMapping("/upload")
-    public ResponseEntity<PhotoDto> uploadPhoto(@RequestParam("file") MultipartFile file) {
+    public ResponseEntity<?> uploadPhoto(@RequestParam("file") MultipartFile file) {
         logger.info("Appel de uploadPhoto");
         logger.debug("Paramètre file : null={}, empty={}", file == null, file != null && file.isEmpty());
         if (file != null) {
@@ -70,6 +72,10 @@ public class PhotoController {
         } catch (IllegalArgumentException e) {
             logger.error("Erreur de validation : {}", e.getMessage());
             return ResponseEntity.badRequest().body(null);
+        } catch (DuplicatePhotoException e) {
+            logger.info("Photo ignorée car déjà présente : {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(java.util.Map.of("message", e.getMessage()));
         } catch (IOException e) {
             logger.error("Erreur IO : {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
@@ -83,7 +89,7 @@ public class PhotoController {
     * @return ResponseEntity avec la liste des PhotoDto sauvegardées
     */
     @PostMapping("/upload/multiple")
-    public ResponseEntity<List<PhotoDto>> uploadPhotos(@RequestParam("files") MultipartFile[] files) {
+    public ResponseEntity<?> uploadPhotos(@RequestParam("files") MultipartFile[] files) {
         logger.info("Appel de uploadPhotos");
         logger.debug("Paramètre files : null={}, length={}", files == null, files != null ? files.length : 0);
         if (files != null) {
@@ -96,9 +102,24 @@ public class PhotoController {
             List<PhotoDto> photoDtos = photoService.uploadPhotos(files);
             logger.info("Photos uploadée avec succès, ID: {}", photoDtos.stream().map(p -> p.id()).toArray());
             return ResponseEntity.ok(photoDtos);
+        } catch (MultiplePhotoUploadException e) {
+            logger.warn("{} erreur(s) pendant l'upload multiple", e.getErrors().size());
+            List<java.util.Map<String, String>> errors = e.getErrors().stream()
+                    .map(error -> java.util.Map.of(
+                            "type", error.getClass().getSimpleName(),
+                            "message", error.getMessage() != null ? error.getMessage() : "Erreur inconnue"))
+                    .toList();
+            return ResponseEntity.status(HttpStatus.MULTI_STATUS)
+                    .body(java.util.Map.of(
+                            "uploadedPhotos", e.getUploadedPhotos(),
+                            "errors", errors));
         } catch (IllegalArgumentException e) {
             logger.error("Erreur de validation : {}", e.getMessage());
             return ResponseEntity.badRequest().body(null);
+        } catch (DuplicatePhotoException e) {
+            logger.info("Photo ignorée car déjà présente : {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(java.util.Map.of("message", e.getMessage()));
         } catch (IOException e) {
             logger.error("Erreur IO : {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();

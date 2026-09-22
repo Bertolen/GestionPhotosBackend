@@ -1,5 +1,6 @@
 package com.example.gestionphotos.service;
 
+import com.example.gestionphotos.exception.DuplicatePhotoException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -15,6 +16,7 @@ import java.time.format.DateTimeParseException;
 import java.time.format.DateTimeFormatter;
 import java.time.format.ResolverStyle;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import java.util.UUID;
 
 /**
@@ -53,6 +55,12 @@ public class FileStorageService {
         String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
         String extension = getFileExtension(originalFilename);
         LocalDateTime uploadDate = LocalDateTime.now();
+
+        if (isAlreadyStored(originalFilename)) {
+            throw new DuplicatePhotoException(
+                    "La photo '" + originalFilename + "' existe déjà dans le système de stockage");
+        }
+
         String uniqueId = UUID.randomUUID().toString().substring(0, 8);
         
         // Construire le nom du fichier : originalName_timestamp_UUID.ext
@@ -79,6 +87,36 @@ public class FileStorageService {
         // Retourner le chemin relatif (pour stocker en base ou dans le DTO)
         // Utiliser des / pour la portabilité
         return Paths.get("photos").resolve(datePath).resolve(fileName).toString().replace('\\', '/');
+    }
+
+    /**
+     * Vérifie si une photo portant le même nom d'origine a déjà été stockée.
+     *
+     * @param originalFilename le nom du fichier envoyé
+     * @return true si une photo correspondante est déjà présente
+     * @throws IOException en cas d'erreur de parcours du stockage
+     */
+    private boolean isAlreadyStored(String originalFilename) throws IOException {
+        if (originalFilename == null || originalFilename.isBlank()) {
+            return false;
+        }
+
+        Path photosLocation = this.rootLocation.resolve("photos");
+        if (!Files.exists(photosLocation)) {
+            return false;
+        }
+
+        String storedFilenamePrefix = removeExtension(originalFilename) + "_";
+        String extension = getFileExtension(originalFilename);
+        String storedFilenamePattern = Pattern.quote(storedFilenamePrefix)
+                + "[0-9a-fA-F]{8}"
+                + Pattern.quote(extension);
+        try (var paths = Files.walk(photosLocation)) {
+            return paths
+                    .filter(Files::isRegularFile)
+                    .map(path -> path.getFileName().toString())
+                    .anyMatch(filename -> filename.matches(storedFilenamePattern));
+        }
     }
 
     /**

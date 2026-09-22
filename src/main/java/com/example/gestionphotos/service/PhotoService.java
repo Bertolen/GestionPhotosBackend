@@ -1,6 +1,7 @@
 package com.example.gestionphotos.service;
 
 import com.example.gestionphotos.dto.PhotoDto;
+import com.example.gestionphotos.exception.MultiplePhotoUploadException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -89,11 +90,20 @@ public class PhotoService {
      */
     public List<PhotoDto> uploadPhotos(MultipartFile[] files) throws IOException {
         List<PhotoDto> uploadedPhotos = new ArrayList<>();
+        List<Exception> errors = new ArrayList<>();
         
         for (MultipartFile file : files) {
-            if (!file.isEmpty()) {
-                uploadedPhotos.add(uploadPhoto(file));
+            try {
+                if (!file.isEmpty()) {
+                    uploadedPhotos.add(uploadPhoto(file));
+                }
+            } catch (Exception e) {
+                errors.add(e);
             }
+        }
+
+        if (!errors.isEmpty()) {
+            throw new MultiplePhotoUploadException(uploadedPhotos, errors);
         }
         
         return uploadedPhotos;

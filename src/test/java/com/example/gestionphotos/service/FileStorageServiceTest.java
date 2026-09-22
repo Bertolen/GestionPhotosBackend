@@ -1,5 +1,6 @@
 package com.example.gestionphotos.service;
 
+import com.example.gestionphotos.exception.DuplicatePhotoException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -115,8 +116,8 @@ class FileStorageServiceTest {
 
     @Test
     void store_shouldGenerateUniqueFilename() throws IOException {
-        // Arrange - stocker deux fois le même fichier
-        when(multipartFile.getOriginalFilename()).thenReturn("test.jpg");
+        // Arrange - stocker deux fichiers différents
+        when(multipartFile.getOriginalFilename()).thenReturn("test1.jpg").thenReturn("test2.jpg");
         when(multipartFile.getInputStream())
                 .thenReturn(new ByteArrayInputStream("content1".getBytes()))
                 .thenReturn(new ByteArrayInputStream("content2".getBytes()));
@@ -131,6 +132,17 @@ class FileStorageServiceTest {
         Path fullPath2 = fileStorageService.getRootLocation().resolve(storedPath2.replace('/', java.io.File.separatorChar));
         assertTrue(Files.exists(fullPath1));
         assertTrue(Files.exists(fullPath2));
+    }
+
+    @Test
+    void store_shouldRejectPhotoWithAnExistingOriginalFilename() throws IOException {
+        // Arrange
+        when(multipartFile.getOriginalFilename()).thenReturn("20260920_191817.jpg");
+        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("content".getBytes()));
+        fileStorageService.store(multipartFile);
+
+        // Act & Assert
+        assertThrows(DuplicatePhotoException.class, () -> fileStorageService.store(multipartFile));
     }
 
 
