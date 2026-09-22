@@ -1,0 +1,29 @@
+server:
+  port: 8080
+
+app:
+  storage:
+    path: ./photos-storage
+  upload:
+    max-file-size: 10485760
+    allowed-mime-types: image/jpeg,image/png,image/gif,image/webp,image/jpg
+
+spring:
+  thymeleaf:
+    cache: false
+  mvc:
+    cors:
+      allowed-origins: http://localhost:4200
+      allowed-methods: GET,POST,PUT,DELETE,OPTIONS
+      allowed-headers: "*"
+      allow-credentials: true
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+logging:
+  level:
+    org.springframework.web: DEBUG
+    com.example.gestionphotos: DEBUG
+    com.example: DEBUG
