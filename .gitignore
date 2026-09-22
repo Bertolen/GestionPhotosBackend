@@ -1,0 +1,47 @@
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# Java
+*.class
+*.jar
+target/
+*.iml
+
+# Maven
+pom.xml.versionsBackup
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+
+# Spring Boot
+application.properties.bak
+
+# Storage
+photos-storage/
+storage/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Angular (pour le frontend)
+node_modules/
+dist/
+out-tsc/
+
+# Environment files
+*.local
+
+# Test coverage
+coverage/
+
+# Build tool generated files
+.angular/
