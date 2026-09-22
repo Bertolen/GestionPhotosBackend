@@ -162,7 +162,10 @@ curl http://localhost:8080/api/photos/{id}/download --output photo.jpg
 ## 📝 Notes
 
 - Les photos sont stockées avec un nom unique incluant un timestamp et un UUID
-- L'arborescence est automatique : `YYYY/MM/DD/filename_timestamp_UUID.ext`
+- L'arborescence est automatique : `YYYY/MM/DD/filename_timestamp_UUID.ext`. Pour les photos
+  nommées selon la convention Android `YYYYMMDD_HHmmss.ext` (par exemple
+  `20260920_191817.jpg`), la date des dossiers est extraite du nom ; sinon, la date
+  d'upload est utilisée.
 - Les types de fichiers acceptés : JPEG, PNG, GIF, WEBP
 - Taille maximale par défaut : 10 Mo (configurable)
 

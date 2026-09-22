@@ -11,7 +11,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.time.format.DateTimeFormatter;
+import java.time.format.ResolverStyle;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -27,8 +30,10 @@ public class FileStorageService {
     // Formatter pour les dossiers : YYYY/MM/DD
     private static final DateTimeFormatter DATE_FOLDER_FORMATTER = DateTimeFormatter.ofPattern("yyyy/MM/dd");
     
-    // Formatter pour les noms de fichiers : YYYY-MM-DD_HH-MM-SS
-    private static final DateTimeFormatter FILE_NAME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
+    // Formatter des noms de photos Android : YYYYMMDD_HHmmss
+    private static final DateTimeFormatter PHOTO_TIMESTAMP_FORMATTER =
+            DateTimeFormatter.ofPattern("uuuuMMdd_HHmmss")
+                    .withResolverStyle(ResolverStyle.STRICT);
 
     public FileStorageService(@Value("${app.storage.path}") String storagePath) throws IOException {
         this.rootLocation = Paths.get(storagePath).toAbsolutePath().normalize();
@@ -47,18 +52,18 @@ public class FileStorageService {
         // Générer un nom de fichier unique avec timestamp
         String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
         String extension = getFileExtension(originalFilename);
-        String timestamp = LocalDateTime.now().format(FILE_NAME_FORMATTER);
+        LocalDateTime uploadDate = LocalDateTime.now();
         String uniqueId = UUID.randomUUID().toString().substring(0, 8);
         
         // Construire le nom du fichier : originalName_timestamp_UUID.ext
-        String fileName = String.format("%s_%s_%s%s", 
+        String fileName = String.format("%s_%s%s", 
                 removeExtension(originalFilename), 
-                timestamp, 
                 uniqueId,
                 extension);
 
         // Construire le chemin complet avec arborescence de dates
-        String datePath = LocalDateTime.now().format(DATE_FOLDER_FORMATTER);
+        LocalDateTime dateForStorage = extractPhotoTimestamp(originalFilename).orElse(uploadDate);
+        String datePath = dateForStorage.format(DATE_FOLDER_FORMATTER);
         Path destinationPath = this.rootLocation
                 .resolve("photos")
                 .resolve(datePath)
@@ -74,6 +79,25 @@ public class FileStorageService {
         // Retourner le chemin relatif (pour stocker en base ou dans le DTO)
         // Utiliser des / pour la portabilité
         return Paths.get("photos").resolve(datePath).resolve(fileName).toString().replace('\\', '/');
+    }
+
+    /**
+     * Extrait la date de prise de vue d'un nom de photo Android.
+     *
+     * @param filename le nom du fichier
+     * @return la date extraite si le nom respecte la convention YYYYMMDD_HHmmss.ext
+     */
+    private Optional<LocalDateTime> extractPhotoTimestamp(String filename) {
+        if (filename == null || !filename.matches("^\\d{8}_\\d{6}\\.[^.]+$")) {
+            return Optional.empty();
+        }
+
+        String timestamp = removeExtension(filename);
+        try {
+            return Optional.of(LocalDateTime.parse(timestamp, PHOTO_TIMESTAMP_FORMATTER));
+        } catch (DateTimeParseException e) {
+            return Optional.empty();
+        }
     }
 
     /**

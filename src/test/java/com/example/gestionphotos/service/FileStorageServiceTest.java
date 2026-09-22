@@ -84,6 +84,36 @@ class FileStorageServiceTest {
     }
 
     @Test
+    void store_shouldUseTimestampFromAndroidFilenameForDateDirectory() throws IOException {
+        // Arrange
+        when(multipartFile.getOriginalFilename()).thenReturn("20260920_191817.jpg");
+        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("test".getBytes()));
+
+        // Act
+        String storedPath = fileStorageService.store(multipartFile);
+
+        // Assert
+        assertTrue(storedPath.matches("photos/2026/09/20/.*"));
+        Path fullPath = fileStorageService.getRootLocation().resolve(storedPath.replace('/', java.io.File.separatorChar));
+        assertTrue(Files.exists(fullPath));
+    }
+
+    @Test
+    void store_shouldUseUploadDateForInvalidAndroidFilename() throws IOException {
+        // Arrange
+        when(multipartFile.getOriginalFilename()).thenReturn("20261320_191817.jpg");
+        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("test".getBytes()));
+        String todayPath = java.time.LocalDateTime.now()
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd"));
+
+        // Act
+        String storedPath = fileStorageService.store(multipartFile);
+
+        // Assert
+        assertTrue(storedPath.startsWith("photos/" + todayPath + "/"));
+    }
+
+    @Test
     void store_shouldGenerateUniqueFilename() throws IOException {
         // Arrange - stocker deux fois le même fichier
         when(multipartFile.getOriginalFilename()).thenReturn("test.jpg");
