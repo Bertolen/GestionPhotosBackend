@@ -72,7 +72,8 @@ public class FileStorageService {
         Files.copy(file.getInputStream(), destinationPath, StandardCopyOption.REPLACE_EXISTING);
 
         // Retourner le chemin relatif (pour stocker en base ou dans le DTO)
-        return Paths.get("photos").resolve(datePath).resolve(fileName).toString();
+        // Utiliser des / pour la portabilité
+        return Paths.get("photos").resolve(datePath).resolve(fileName).toString().replace('\\', '/');
     }
 
     /**
@@ -125,7 +126,7 @@ public class FileStorageService {
      * @param filename le nom du fichier
      * @return l'extension (incluant le point)
      */
-    private String getFileExtension(String filename) {
+    String getFileExtension(String filename) {
         if (filename == null || filename.isEmpty()) {
             return ".unknown";
         }
@@ -142,7 +143,7 @@ public class FileStorageService {
      * @param filename le nom du fichier
      * @return le nom sans extension
      */
-    private String removeExtension(String filename) {
+    String removeExtension(String filename) {
         if (filename == null || filename.isEmpty()) {
             return "unknown";
         }

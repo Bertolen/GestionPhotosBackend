@@ -7,8 +7,8 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -51,13 +51,7 @@ class FileStorageServiceTest {
         byte[] content = "test content".getBytes();
         
         when(multipartFile.getOriginalFilename()).thenReturn(originalFilename);
-        when(multipartFile.getInputStream()).thenReturn(new InputStream() {
-            private int index = 0;
-            @Override
-            public int read() {
-                return index < content.length ? content[index++] : -1;
-            }
-        });
+        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream(content));
 
         // Act
         String storedPath = fileStorageService.store(multipartFile);
@@ -68,7 +62,7 @@ class FileStorageServiceTest {
         assertTrue(storedPath.contains("test"));
         
         // Vérifier que le fichier existe
-        Path fullPath = fileStorageService.getRootLocation().resolve(storedPath);
+        Path fullPath = fileStorageService.getRootLocation().resolve(storedPath.replace('/', java.io.File.separatorChar));
         assertTrue(Files.exists(fullPath));
     }
 
@@ -76,20 +70,17 @@ class FileStorageServiceTest {
     void store_shouldCreateDateDirectoryStructure() throws IOException {
         // Arrange
         when(multipartFile.getOriginalFilename()).thenReturn("test.png");
-        when(multipartFile.getInputStream()).thenReturn(new InputStream() {
-            private int index = 0;
-            private final byte[] content = "test".getBytes();
-            @Override
-            public int read() {
-                return index < content.length ? content[index++] : -1;
-            }
-        });
+        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("test".getBytes()));
 
         // Act
         String storedPath = fileStorageService.store(multipartFile);
 
         // Assert - le chemin doit contenir année/mois/jour
         assertTrue(storedPath.matches("photos/\\d{4}/\\d{2}/\\d{2}/.*"));
+        
+        // Vérifier que le fichier existe
+        Path fullPath = fileStorageService.getRootLocation().resolve(storedPath.replace('/', java.io.File.separatorChar));
+        assertTrue(Files.exists(fullPath));
     }
 
     @Test
@@ -97,8 +88,8 @@ class FileStorageServiceTest {
         // Arrange - stocker deux fois le même fichier
         when(multipartFile.getOriginalFilename()).thenReturn("test.jpg");
         when(multipartFile.getInputStream())
-                .thenReturn(createInputStream("content1"))
-                .thenReturn(createInputStream("content2"));
+                .thenReturn(new ByteArrayInputStream("content1".getBytes()))
+                .thenReturn(new ByteArrayInputStream("content2".getBytes()));
 
         // Act
         String storedPath1 = fileStorageService.store(multipartFile);
@@ -106,8 +97,10 @@ class FileStorageServiceTest {
 
         // Assert - les noms doivent être différents
         assertNotEquals(storedPath1, storedPath2);
-        assertTrue(Files.exists(fileStorageService.getRootLocation().resolve(storedPath1)));
-        assertTrue(Files.exists(fileStorageService.getRootLocation().resolve(storedPath2)));
+        Path fullPath1 = fileStorageService.getRootLocation().resolve(storedPath1.replace('/', java.io.File.separatorChar));
+        Path fullPath2 = fileStorageService.getRootLocation().resolve(storedPath2.replace('/', java.io.File.separatorChar));
+        assertTrue(Files.exists(fullPath1));
+        assertTrue(Files.exists(fullPath2));
     }
 
 
@@ -117,7 +110,7 @@ class FileStorageServiceTest {
     void load_shouldReturnAbsolutePath() throws IOException {
         // Arrange
         when(multipartFile.getOriginalFilename()).thenReturn("test.jpg");
-        when(multipartFile.getInputStream()).thenReturn(createInputStream("test"));
+        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("test".getBytes()));
         
         String storedPath = fileStorageService.store(multipartFile);
 
@@ -134,7 +127,7 @@ class FileStorageServiceTest {
     void load_shouldReturnNormalizedPath() throws IOException {
         // Arrange
         when(multipartFile.getOriginalFilename()).thenReturn("test.jpg");
-        when(multipartFile.getInputStream()).thenReturn(createInputStream("test"));
+        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("test".getBytes()));
         
         String storedPath = fileStorageService.store(multipartFile);
 
@@ -152,10 +145,10 @@ class FileStorageServiceTest {
     void delete_shouldRemoveFile() throws IOException {
         // Arrange
         when(multipartFile.getOriginalFilename()).thenReturn("test.jpg");
-        when(multipartFile.getInputStream()).thenReturn(createInputStream("test"));
+        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("test".getBytes()));
         
         String storedPath = fileStorageService.store(multipartFile);
-        Path filePath = fileStorageService.getRootLocation().resolve(storedPath);
+        Path filePath = fileStorageService.getRootLocation().resolve(storedPath.replace('/', java.io.File.separatorChar));
         assertTrue(Files.exists(filePath));
 
         // Act
@@ -181,7 +174,7 @@ class FileStorageServiceTest {
     void exists_shouldReturnTrueWhenFileExists() throws IOException {
         // Arrange
         when(multipartFile.getOriginalFilename()).thenReturn("test.jpg");
-        when(multipartFile.getInputStream()).thenReturn(createInputStream("test"));
+        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("test".getBytes()));
         
         String storedPath = fileStorageService.store(multipartFile);
 
@@ -209,7 +202,7 @@ class FileStorageServiceTest {
         // Arrange
         String content = "test content for size";
         when(multipartFile.getOriginalFilename()).thenReturn("test.jpg");
-        when(multipartFile.getInputStream()).thenReturn(createInputStream(content));
+        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream(content.getBytes()));
         
         String storedPath = fileStorageService.store(multipartFile);
 
@@ -258,16 +251,4 @@ class FileStorageServiceTest {
     }
 
 
-    // ==================== Helper methods ====================
-
-    private InputStream createInputStream(String content) {
-        return new InputStream() {
-            private int index = 0;
-            private final byte[] bytes = content.getBytes();
-            @Override
-            public int read() {
-                return index < bytes.length ? bytes[index++] : -1;
-            }
-        };
-    }
 }
