@@ -1,6 +1,7 @@
 package com.example.gestionphotos.service;
 
 import com.example.gestionphotos.exception.DuplicatePhotoException;
+import com.example.gestionphotos.utils.PhotoTimestampUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -12,10 +13,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeParseException;
 import java.time.format.DateTimeFormatter;
-import java.time.format.ResolverStyle;
-import java.util.Optional;
 import java.util.regex.Pattern;
 import java.util.UUID;
 
@@ -32,11 +30,6 @@ public class FileStorageService {
     // Formatter pour les dossiers : YYYY/MM/DD
     private static final DateTimeFormatter DATE_FOLDER_FORMATTER = DateTimeFormatter.ofPattern("yyyy/MM/dd");
     
-    // Formatter des noms de photos Android : YYYYMMDD_HHmmss
-    private static final DateTimeFormatter PHOTO_TIMESTAMP_FORMATTER =
-            DateTimeFormatter.ofPattern("uuuuMMdd_HHmmss")
-                    .withResolverStyle(ResolverStyle.STRICT);
-
     public FileStorageService(@Value("${app.storage.path}") String storagePath) throws IOException {
         this.rootLocation = Paths.get(storagePath).toAbsolutePath().normalize();
         Files.createDirectories(this.rootLocation);
@@ -70,7 +63,8 @@ public class FileStorageService {
                 extension);
 
         // Construire le chemin complet avec arborescence de dates
-        LocalDateTime dateForStorage = extractPhotoTimestamp(originalFilename).orElse(uploadDate);
+        LocalDateTime dateForStorage = PhotoTimestampUtils.extractPhotoTimestamp(originalFilename)
+                .orElse(uploadDate);
         String datePath = dateForStorage.format(DATE_FOLDER_FORMATTER);
         Path destinationPath = this.rootLocation
                 .resolve("photos")
@@ -116,25 +110,6 @@ public class FileStorageService {
                     .filter(Files::isRegularFile)
                     .map(path -> path.getFileName().toString())
                     .anyMatch(filename -> filename.matches(storedFilenamePattern));
-        }
-    }
-
-    /**
-     * Extrait la date de prise de vue d'un nom de photo Android.
-     *
-     * @param filename le nom du fichier
-     * @return la date extraite si le nom respecte la convention YYYYMMDD_HHmmss.ext
-     */
-    private Optional<LocalDateTime> extractPhotoTimestamp(String filename) {
-        if (filename == null || !filename.matches("^\\d{8}_\\d{6}\\.[^.]+$")) {
-            return Optional.empty();
-        }
-
-        String timestamp = removeExtension(filename);
-        try {
-            return Optional.of(LocalDateTime.parse(timestamp, PHOTO_TIMESTAMP_FORMATTER));
-        } catch (DateTimeParseException e) {
-            return Optional.empty();
         }
     }
 

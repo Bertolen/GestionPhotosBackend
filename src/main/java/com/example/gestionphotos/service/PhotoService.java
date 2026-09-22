@@ -2,6 +2,7 @@ package com.example.gestionphotos.service;
 
 import com.example.gestionphotos.dto.PhotoDto;
 import com.example.gestionphotos.exception.MultiplePhotoUploadException;
+import com.example.gestionphotos.utils.PhotoTimestampUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -220,6 +221,8 @@ public class PhotoService {
                     .toInstant()
                     .atZone(java.time.ZoneId.systemDefault())
                     .toLocalDateTime();
+            LocalDateTime creationDate = PhotoTimestampUtils.extractPhotoTimestamp(fileName)
+                    .orElse(modifiedDate);
             
             return new PhotoDto(
                 uuid,
@@ -229,7 +232,7 @@ public class PhotoService {
                 Files.size(path),
                 Files.probeContentType(path),
                 modifiedDate,
-                modifiedDate
+                creationDate
             );
         } catch (IOException e) {
             System.err.println("Erreur lors de la conversion du chemin en PhotoDto: " + e.getMessage());
@@ -291,7 +294,7 @@ public class PhotoService {
         return getAllPhotos().stream()
                 .filter(photo -> !photo.creationDate().isBefore(fromDate))
                 .filter(photo -> !photo.creationDate().isAfter(toDate))
-                .sorted((p1, p2) -> p2.creationDate().compareTo(p1.creationDate()))
+                .sorted((p1, p2) -> p1.creationDate().compareTo(p2.creationDate()))
                 .collect(Collectors.toList());
     }
 

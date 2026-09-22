@@ -166,6 +166,7 @@ public class PhotoController {
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fromDate,
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime toDate) {
             logger.info("Appel de getPhotosByDateRange");
+            logger.debug("fromDate={}, toDate={}", fromDate, toDate);
             List<PhotoDto> photos = photoService.getPhotosByDateRange(fromDate, toDate);
             return ResponseEntity.ok(photos);
         }
