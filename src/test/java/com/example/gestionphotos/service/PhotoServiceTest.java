@@ -431,4 +431,85 @@ class PhotoServiceTest {
         PhotoDto result = photoService.uploadPhoto(multipartFile);
         assertNotNull(result);
     }
+
+
+    // ==================== Tests pour getPhotosByIds ====================
+
+    @Test
+    void getPhotosByIds_shouldReturnMatchingPhotos() {
+        // Arrange
+        PhotoDto photo1 = new PhotoDto("id1", "name1.jpg", "path1", "file1.jpg", 100L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+        PhotoDto photo2 = new PhotoDto("id2", "name2.jpg", "path2", "file2.jpg", 200L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+        PhotoDto photo3 = new PhotoDto("id3", "name3.jpg", "path3", "file3.jpg", 300L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+
+        PhotoService spyService = spy(photoService);
+        doReturn(new ArrayList<>(List.of(photo1, photo2, photo3))).when(spyService).getAllPhotos();
+
+        // Act
+        List<PhotoDto> result = spyService.getPhotosByIds(List.of("id1", "id3"));
+
+        // Assert
+        assertEquals(2, result.size());
+        assertTrue(result.stream().anyMatch(p -> p.id().equals("id1")));
+        assertTrue(result.stream().anyMatch(p -> p.id().equals("id3")));
+    }
+
+    @Test
+    void getPhotosByIds_shouldReturnEmptyListWhenNoMatch() {
+        // Arrange
+        PhotoDto photo1 = new PhotoDto("id1", "name1.jpg", "path1", "file1.jpg", 100L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+
+        PhotoService spyService = spy(photoService);
+        doReturn(new ArrayList<>(List.of(photo1))).when(spyService).getAllPhotos();
+
+        // Act
+        List<PhotoDto> result = spyService.getPhotosByIds(List.of("non-existent-id"));
+
+        // Assert
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void getPhotosByIds_shouldReturnEmptyListWhenInputIsEmpty() {
+        // Act
+        List<PhotoDto> result = photoService.getPhotosByIds(List.of());
+
+        // Assert
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void getPhotosByIds_shouldReturnEmptyListWhenInputIsNull() {
+        // Act
+        List<PhotoDto> result = photoService.getPhotosByIds(null);
+
+        // Assert
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void getPhotosByIds_shouldReturnAllPhotosWhenAllMatch() {
+        // Arrange
+        PhotoDto photo1 = new PhotoDto("id1", "name1.jpg", "path1", "file1.jpg", 100L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+        PhotoDto photo2 = new PhotoDto("id2", "name2.jpg", "path2", "file2.jpg", 200L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+
+        PhotoService spyService = spy(photoService);
+        doReturn(new ArrayList<>(List.of(photo1, photo2))).when(spyService).getAllPhotos();
+
+        // Act
+        List<PhotoDto> result = spyService.getPhotosByIds(List.of("id1", "id2"));
+
+        // Assert
+        assertEquals(2, result.size());
+        assertTrue(result.stream().anyMatch(p -> p.id().equals("id1")));
+        assertTrue(result.stream().anyMatch(p -> p.id().equals("id2")));
+    }
+
+
 }

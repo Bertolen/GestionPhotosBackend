@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,8 +15,11 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.regex.Pattern;
 import java.util.UUID;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 /**
  * Service pour gérer le stockage des fichiers photos sur le système de fichiers.
@@ -218,5 +222,32 @@ public class FileStorageService {
      */
     public Path getRootLocation() {
         return rootLocation;
+    }
+
+    /**
+     * Crée un fichier ZIP contenant plusieurs fichiers.
+     * 
+     * @param storedPaths liste des chemins relatifs des fichiers à inclure
+     * @return tableau d'octets contenant le fichier ZIP
+     * @throws IOException en cas d'erreur de création du ZIP
+     */
+    public byte[] createZipFromPaths(List<String> storedPaths) throws IOException {
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+        
+        try (ZipOutputStream zipOutputStream = new ZipOutputStream(byteArrayOutputStream)) {
+            for (String storedPath : storedPaths) {
+                Path filePath = this.rootLocation.resolve(storedPath).normalize();
+                if (Files.exists(filePath) && Files.isRegularFile(filePath)) {
+                    // Utiliser seulement le nom de fichier dans le ZIP pour éviter les chemins absolus
+                    String fileName = Path.of(storedPath).getFileName().toString();
+                    ZipEntry zipEntry = new ZipEntry(fileName);
+                    zipOutputStream.putNextEntry(zipEntry);
+                    Files.copy(filePath, zipOutputStream);
+                    zipOutputStream.closeEntry();
+                }
+            }
+        }
+        
+        return byteArrayOutputStream.toByteArray();
     }
 }

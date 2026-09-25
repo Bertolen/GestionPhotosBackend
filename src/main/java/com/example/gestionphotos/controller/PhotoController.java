@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -246,6 +247,56 @@ public class PhotoController {
             public ResponseEntity<String> status() {
                 logger.info("Appel de status");
                 return ResponseEntity.ok("Service Photo est opérationnel");
+            }
+
+            /**
+            * Télécharge plusieurs photos en un seul fichier ZIP.
+            * 
+            * @param photoIds liste des identifiants de photos à télécharger
+            * @return ResponseEntity avec le fichier ZIP à télécharger
+            */
+            @PostMapping("/download/bulk")
+            public ResponseEntity<byte[]> downloadPhotosBulk(@RequestParam List<String> photoIds) {
+                logger.info("Appel de downloadPhotosBulk");
+                logger.debug("Paramètre photoIds : {}", photoIds);
+                
+                // Supprimer les doublons
+                List<String> uniquePhotoIds = photoIds.stream()
+                        .distinct()
+                        .collect(Collectors.toList());
+                
+                logger.debug("Identifiants uniques : {}", uniquePhotoIds);
+                
+                // Récupérer les photos correspondantes
+                List<PhotoDto> photos = photoService.getPhotosByIds(uniquePhotoIds);
+                
+                if (photos.isEmpty()) {
+                    logger.warn("Aucune photo trouvée pour les identifiants fournis");
+                    return ResponseEntity.notFound().build();
+                }
+                
+                logger.debug("Photos trouvées : {}", photos.size());
+                
+                try {
+                    // Créer le ZIP avec les photos
+                    List<String> storedPaths = photos.stream()
+                            .map(PhotoDto::storedPath)
+                            .collect(Collectors.toList());
+                    
+                    byte[] zipBytes = fileStorageService.createZipFromPaths(storedPaths);
+                    
+                    // Déterminer le nom du fichier ZIP
+                    String zipFileName = "photos_" + java.time.LocalDate.now() + ".zip";
+                    
+                    return ResponseEntity.ok()
+                            .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                            .header(HttpHeaders.CONTENT_DISPOSITION, 
+                                    "attachment; filename=\"" + zipFileName + "\"")
+                            .body(zipBytes);
+                } catch (IOException e) {
+                    logger.error("Erreur lors de la création du ZIP : {}", e.getMessage(), e);
+                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+                }
             }
         }
         

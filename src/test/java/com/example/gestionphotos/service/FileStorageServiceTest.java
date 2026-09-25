@@ -12,6 +12,9 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
@@ -290,6 +293,148 @@ class FileStorageServiceTest {
         assertEquals("noextension", fileStorageService.removeExtension("noextension"));
         assertEquals("unknown", fileStorageService.removeExtension(""));
         assertEquals("unknown", fileStorageService.removeExtension(null));
+    }
+
+
+    // ==================== Tests pour createZipFromPaths ====================
+
+    @Test
+    void createZipFromPaths_shouldCreateValidZipWithMultipleFiles() throws IOException {
+        // Arrange - créer plusieurs fichiers
+        String content1 = "Contenu du fichier 1";
+        String content2 = "Contenu du fichier 2";
+        
+        when(multipartFile.getOriginalFilename()).thenReturn("file1.txt").thenReturn("file2.txt");
+        when(multipartFile.getInputStream())
+                .thenReturn(new ByteArrayInputStream(content1.getBytes()))
+                .thenReturn(new ByteArrayInputStream(content2.getBytes()));
+        
+        String path1 = fileStorageService.store(multipartFile);
+        String path2 = fileStorageService.store(multipartFile);
+        
+        // Act
+        byte[] zipBytes = fileStorageService.createZipFromPaths(List.of(path1, path2));
+        
+        // Assert
+        assertNotNull(zipBytes);
+        assertTrue(zipBytes.length > 0);
+        
+        // Vérifier que le ZIP contient les deux fichiers
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+            ZipEntry entry;
+            int fileCount = 0;
+            boolean foundFile1 = false;
+            boolean foundFile2 = false;
+            
+            while ((entry = zis.getNextEntry()) != null) {
+                fileCount++;
+                if (entry.getName().contains("file1")) {
+                    foundFile1 = true;
+                }
+                if (entry.getName().contains("file2")) {
+                    foundFile2 = true;
+                }
+                zis.closeEntry();
+            }
+            
+            assertEquals(2, fileCount);
+            assertTrue(foundFile1);
+            assertTrue(foundFile2);
+        }
+    }
+
+    @Test
+    void createZipFromPaths_shouldCreateEmptyZipWithEmptyList() throws IOException {
+        // Act
+        byte[] zipBytes = fileStorageService.createZipFromPaths(List.of());
+        
+        // Assert
+        assertNotNull(zipBytes);
+        // Un ZIP vide a quand même un en-tête, donc on vérifie qu'il n'est pas null
+        // et que c'est un tableau valide
+        assertTrue(zipBytes.length >= 0);
+    }
+
+    @Test
+    void createZipFromPaths_shouldSkipNonExistentFiles() throws IOException {
+        // Arrange - créer un fichier valide et un non-existent
+        String content = "Contenu valide";
+        when(multipartFile.getOriginalFilename()).thenReturn("valid.txt");
+        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream(content.getBytes()));
+        
+        String validPath = fileStorageService.store(multipartFile);
+        String nonExistentPath = "photos/2024/01/01/nonexistent.txt";
+        
+        // Act
+        byte[] zipBytes = fileStorageService.createZipFromPaths(List.of(validPath, nonExistentPath));
+        
+        // Assert
+        assertNotNull(zipBytes);
+        assertTrue(zipBytes.length > 0);
+        
+        // Vérifier que le ZIP contient seulement un fichier
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+            ZipEntry entry;
+            int fileCount = 0;
+            
+            while ((entry = zis.getNextEntry()) != null) {
+                fileCount++;
+                zis.closeEntry();
+            }
+            
+            assertEquals(1, fileCount);
+        }
+    }
+
+    @Test
+    void createZipFromPaths_shouldHandleFilesWithDifferentExtensions() throws IOException {
+        // Arrange - créer des fichiers avec différentes extensions
+        when(multipartFile.getOriginalFilename())
+                .thenReturn("photo1.jpg")
+                .thenReturn("photo2.png")
+                .thenReturn("doc.txt");
+        when(multipartFile.getInputStream())
+                .thenReturn(new ByteArrayInputStream("jpg content".getBytes()))
+                .thenReturn(new ByteArrayInputStream("png content".getBytes()))
+                .thenReturn(new ByteArrayInputStream("txt content".getBytes()));
+        
+        String path1 = fileStorageService.store(multipartFile);
+        String path2 = fileStorageService.store(multipartFile);
+        String path3 = fileStorageService.store(multipartFile);
+        
+        // Act
+        byte[] zipBytes = fileStorageService.createZipFromPaths(List.of(path1, path2, path3));
+        
+        // Assert
+        assertNotNull(zipBytes);
+        
+        // Vérifier que le ZIP contient les 3 fichiers
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+            ZipEntry entry;
+            int fileCount = 0;
+            boolean foundJpg = false;
+            boolean foundPng = false;
+            boolean foundTxt = false;
+            
+            while ((entry = zis.getNextEntry()) != null) {
+                fileCount++;
+                if (entry.getName().contains("jpg")) {
+                    foundJpg = true;
+                }
+                if (entry.getName().contains("png")) {
+                    foundPng = true;
+                }
+                if (entry.getName().contains("txt")) {
+                    foundTxt = true;
+                }
+                zis.closeEntry();
+            }
+            
+            assertEquals(3, fileCount);
+            assertTrue(foundJpg);
+            assertTrue(foundPng);
+            assertTrue(foundTxt);
+        }
     }
 
 

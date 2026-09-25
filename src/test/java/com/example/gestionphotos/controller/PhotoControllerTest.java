@@ -1,6 +1,7 @@
 package com.example.gestionphotos.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -24,6 +25,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 
 import com.example.gestionphotos.dto.PhotoDto;
 import com.example.gestionphotos.service.FileStorageService;
@@ -387,4 +389,139 @@ class PhotoControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string("Service Photo est opérationnel"));
     }
+
+
+    // ==================== Tests pour POST /download/bulk ====================
+
+    @Test
+    void downloadPhotosBulk_shouldReturnZipWithPhotos() throws Exception {
+        // Arrange
+        PhotoDto photo1 = new PhotoDto(
+                "id1",
+                "photo1.jpg",
+                "photos/2024/09/22/photo1_2024-09-22_12-30-45_id1.jpg",
+                "photo1_2024-09-22_12-30-45_id1.jpg",
+                TEST_SIZE,
+                TEST_MIME_TYPE,
+                LocalDateTime.now(),
+                LocalDateTime.now()
+        );
+        PhotoDto photo2 = new PhotoDto(
+                "id2",
+                "photo2.jpg",
+                "photos/2024/09/22/photo2_2024-09-22_12-31-00_id2.jpg",
+                "photo2_2024-09-22_12-31-00_id2.jpg",
+                TEST_SIZE,
+                TEST_MIME_TYPE,
+                LocalDateTime.now(),
+                LocalDateTime.now()
+        );
+        
+        when(photoService.getPhotosByIds(anyList())).thenReturn(List.of(photo1, photo2));
+        when(fileStorageService.createZipFromPaths(anyList())).thenReturn(new byte[]{'Z', 'I', 'P'});
+
+        // Act & Assert
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/photos/download/bulk")
+                        .param("photoIds", "id1")
+                        .param("photoIds", "id2"))
+                .andExpect(status().isOk())
+                .andExpect(content().bytes(new byte[]{'Z', 'I', 'P'}));
+        
+        // Vérifier que le service a été appelé avec les bons IDs
+        verify(photoService).getPhotosByIds(List.of("id1", "id2"));
+    }
+
+    @Test
+    void downloadPhotosBulk_shouldRemoveDuplicates() throws Exception {
+        // Arrange
+        PhotoDto photo1 = new PhotoDto(
+                "id1",
+                "photo1.jpg",
+                "photos/2024/09/22/photo1_2024-09-22_12-30-45_id1.jpg",
+                "photo1_2024-09-22_12-30-45_id1.jpg",
+                TEST_SIZE,
+                TEST_MIME_TYPE,
+                LocalDateTime.now(),
+                LocalDateTime.now()
+        );
+        
+        when(photoService.getPhotosByIds(anyList())).thenReturn(List.of(photo1));
+        when(fileStorageService.createZipFromPaths(anyList())).thenReturn(new byte[]{'Z', 'I', 'P'});
+
+        // Act & Assert - passer id1 deux fois
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/photos/download/bulk")
+                        .param("photoIds", "id1")
+                        .param("photoIds", "id1")
+                        .param("photoIds", "id2"))
+                .andExpect(status().isOk())
+                .andExpect(content().bytes(new byte[]{'Z', 'I', 'P'}));
+        
+        // Vérifier que getPhotosByIds a été appelé avec seulement 2 IDs uniques
+        verify(photoService).getPhotosByIds(List.of("id1", "id2"));
+    }
+
+    @Test
+    void downloadPhotosBulk_shouldReturnNotFoundWhenNoPhotosFound() throws Exception {
+        // Arrange
+        when(photoService.getPhotosByIds(anyList())).thenReturn(List.of());
+
+        // Act & Assert
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/photos/download/bulk")
+                        .param("photoIds", "non-existent-id"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void downloadPhotosBulk_shouldReturnInternalServerErrorOnIOException() throws Exception {
+        // Arrange
+        PhotoDto photo1 = new PhotoDto(
+                "id1",
+                "photo1.jpg",
+                "photos/2024/09/22/photo1_2024-09-22_12-30-45_id1.jpg",
+                "photo1_2024-09-22_12-30-45_id1.jpg",
+                TEST_SIZE,
+                TEST_MIME_TYPE,
+                LocalDateTime.now(),
+                LocalDateTime.now()
+        );
+        
+        when(photoService.getPhotosByIds(anyList())).thenReturn(List.of(photo1));
+        when(fileStorageService.createZipFromPaths(anyList())).thenThrow(new IOException("Erreur ZIP"));
+
+        // Act & Assert
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/photos/download/bulk")
+                        .param("photoIds", "id1"))
+                .andExpect(status().isInternalServerError());
+    }
+
+    @Test
+    void downloadPhotosBulk_shouldSetCorrectContentTypeAndDisposition() throws Exception {
+        // Arrange
+        PhotoDto photo1 = new PhotoDto(
+                "id1",
+                "photo1.jpg",
+                "photos/2024/09/22/photo1_2024-09-22_12-30-45_id1.jpg",
+                "photo1_2024-09-22_12-30-45_id1.jpg",
+                TEST_SIZE,
+                TEST_MIME_TYPE,
+                LocalDateTime.now(),
+                LocalDateTime.now()
+        );
+        
+        when(photoService.getPhotosByIds(anyList())).thenReturn(List.of(photo1));
+        when(fileStorageService.createZipFromPaths(anyList())).thenReturn(new byte[]{'Z', 'I', 'P'});
+
+        // Act & Assert
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/photos/download/bulk")
+                        .param("photoIds", "id1"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", "application/octet-stream"))
+                .andExpect(header().string("Content-Disposition", "attachment; filename=\"photos_" + java.time.LocalDate.now() + ".zip\""));
+    }
+
 }

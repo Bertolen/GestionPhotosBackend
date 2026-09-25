@@ -308,4 +308,20 @@ public class PhotoService {
         photos.sort((p1, p2) -> p2.creationDate().compareTo(p1.creationDate()));
         return photos;
     }
+
+    /**
+     * Récupère plusieurs photos par leurs identifiants.
+     * 
+     * @param photoIds liste des identifiants de photos
+     * @return Liste de PhotoDto correspondantes
+     */
+    public List<PhotoDto> getPhotosByIds(List<String> photoIds) {
+        if (photoIds == null || photoIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
+        return getAllPhotos().stream()
+                .filter(photo -> photoIds.contains(photo.id()))
+                .collect(Collectors.toList());
+    }
 }
