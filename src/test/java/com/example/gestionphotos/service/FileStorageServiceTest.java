@@ -374,10 +374,9 @@ class FileStorageServiceTest {
         
         // Vérifier que le ZIP contient seulement un fichier
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
-            ZipEntry entry;
             int fileCount = 0;
             
-            while ((entry = zis.getNextEntry()) != null) {
+            while (zis.getNextEntry() != null) {
                 fileCount++;
                 zis.closeEntry();
             }
