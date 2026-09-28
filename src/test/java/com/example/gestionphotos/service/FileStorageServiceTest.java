@@ -148,6 +148,31 @@ class FileStorageServiceTest {
         assertThrows(DuplicatePhotoException.class, () -> fileStorageService.store(multipartFile));
     }
 
+    @Test
+    void store_shouldRejectReuploadedDownloadedPhoto() throws IOException {
+        // Arrange - Simuler le scénario du bug :
+        // 1. Upload une photo originale
+        String originalFilename = "ma_photo.jpg";
+        byte[] content = "test content".getBytes();
+        
+        when(multipartFile.getOriginalFilename()).thenReturn(originalFilename);
+        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream(content));
+        
+        // Étape 1: Upload initial
+        String firstStoredPath = fileStorageService.store(multipartFile);
+        assertNotNull(firstStoredPath);
+        
+        // Étape 2: Simuler le téléchargement - le fichier est renommé avec un UUID
+        Path path = Path.of(firstStoredPath);
+        String storedFileName = path.getFileName().toString();
+        
+        // Étape 3: Re-upload du fichier téléchargé (même nom original)
+        when(multipartFile.getOriginalFilename()).thenReturn(storedFileName);
+        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream(content));
+        
+        // Act & Assert - doit lever DuplicatePhotoException
+        assertThrows(DuplicatePhotoException.class, () -> fileStorageService.store(multipartFile));
+    }
 
     // ==================== Tests pour load ====================
 

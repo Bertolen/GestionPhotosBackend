@@ -104,11 +104,19 @@ public class FileStorageService {
             return false;
         }
 
-        String storedFilenamePrefix = removeExtension(originalFilename) + "_";
+        String baseName = removeExtension(originalFilename);
         String extension = getFileExtension(originalFilename);
-        String storedFilenamePattern = Pattern.quote(storedFilenamePrefix)
-                + "[0-9a-fA-F]{8}"
-                + Pattern.quote(extension);
+        
+        // Pattern pour matcher : baseName + _ + (n'importe quoi) + extension
+        // Cela permet de détecter des doublons quelle que soit la date ou l'UUID dans le nom
+        String storedFilenamePattern = "(" 
+                + Pattern.quote(baseName)
+                + "_.*"
+                + Pattern.quote(extension)
+                + "$)|("
+                + Pattern.quote(originalFilename)
+                + "$)";;
+        
         try (var paths = Files.walk(photosLocation)) {
             return paths
                     .filter(Files::isRegularFile)
