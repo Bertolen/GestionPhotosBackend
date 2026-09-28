@@ -1,0 +1,39 @@
+# Ignorer les fichiers inutiles pour le build Docker
+
+# Fichiers Maven
+.tmp/
+target/
+pom.xml.versionsBackup
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+
+# Logs
+*.log
+
+# Fichiers temporaires
+*.tmp
+*.swp
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Java
+*.class
+*.jar
+
+# OS
+.DS_Store
+Thumbs.db
