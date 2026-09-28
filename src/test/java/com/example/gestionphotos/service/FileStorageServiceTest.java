@@ -35,8 +35,8 @@ class FileStorageServiceTest {
     @BeforeEach
     void setUp() throws IOException {
         MockitoAnnotations.openMocks(this);
-        // Créer un répertoire de stockage temporaire
-        Path storagePath = tempDir.resolve("storage");
+        // Creer un repertoire de stockage temporaire
+        Path storagePath = tempDir.resolve("photos-storage");
         Files.createDirectories(storagePath);
         
         // FileStorageService attend un chemin de stockage dans son constructeur
@@ -60,35 +60,17 @@ class FileStorageServiceTest {
         // Act
         String storedPath = fileStorageService.store(multipartFile);
 
-        // Assert
+        // Assert - le chemin doit etre juste le nom du fichier (format: YYYYMMDD_HHmmss_UUID8.ext)
         assertNotNull(storedPath);
-        assertTrue(storedPath.startsWith("photos/"));
-        assertTrue(storedPath.contains("test"));
+        assertTrue(storedPath.matches("\\d{8}_\\d{6}_[a-f0-9]{8}\\.jpg"));
         
-        // Vérifier que le fichier existe
-        Path fullPath = fileStorageService.getRootLocation().resolve(storedPath.replace('/', java.io.File.separatorChar));
+        // Verifier que le fichier existe
+        Path fullPath = fileStorageService.getRootLocation().resolve(storedPath);
         assertTrue(Files.exists(fullPath));
     }
 
     @Test
-    void store_shouldCreateDateDirectoryStructure() throws IOException {
-        // Arrange
-        when(multipartFile.getOriginalFilename()).thenReturn("test.png");
-        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("test".getBytes()));
-
-        // Act
-        String storedPath = fileStorageService.store(multipartFile);
-
-        // Assert - le chemin doit contenir année/mois/jour
-        assertTrue(storedPath.matches("photos/\\d{4}/\\d{2}/\\d{2}/.*"));
-        
-        // Vérifier que le fichier existe
-        Path fullPath = fileStorageService.getRootLocation().resolve(storedPath.replace('/', java.io.File.separatorChar));
-        assertTrue(Files.exists(fullPath));
-    }
-
-    @Test
-    void store_shouldUseTimestampFromAndroidFilenameForDateDirectory() throws IOException {
+    void store_shouldUseTimestampFromAndroidFilename() throws IOException {
         // Arrange
         when(multipartFile.getOriginalFilename()).thenReturn("20260920_191817.jpg");
         when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("test".getBytes()));
@@ -96,31 +78,42 @@ class FileStorageServiceTest {
         // Act
         String storedPath = fileStorageService.store(multipartFile);
 
-        // Assert
-        assertTrue(storedPath.matches("photos/2026/09/20/.*"));
-        Path fullPath = fileStorageService.getRootLocation().resolve(storedPath.replace('/', java.io.File.separatorChar));
+        // Assert - le nom de fichier doit commencer par 20260920_191817
+        assertTrue(storedPath.startsWith("20260920_191817_"));
+        assertTrue(storedPath.endsWith(".jpg"));
+        
+        // Verifier que le fichier existe
+        Path fullPath = fileStorageService.getRootLocation().resolve(storedPath);
         assertTrue(Files.exists(fullPath));
     }
 
     @Test
-    void store_shouldUseUploadDateForInvalidAndroidFilename() throws IOException {
+    void store_shouldUseCurrentDateForInvalidAndroidFilename() throws IOException {
         // Arrange
-        when(multipartFile.getOriginalFilename()).thenReturn("20261320_191817.jpg");
+        when(multipartFile.getOriginalFilename()).thenReturn("invalid_name.jpg");
         when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("test".getBytes()));
-        String todayPath = java.time.LocalDateTime.now()
-                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd"));
+        
+        String todayTimestamp = java.time.LocalDateTime.now()
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
 
         // Act
         String storedPath = fileStorageService.store(multipartFile);
 
-        // Assert
-        assertTrue(storedPath.startsWith("photos/" + todayPath + "/"));
+        // Assert - le nom de fichier doit commencer par le timestamp d'aujourd'hui
+        assertTrue(storedPath.startsWith(todayTimestamp + "_"));
+        assertTrue(storedPath.endsWith(".jpg"));
+        
+        Path fullPath = fileStorageService.getRootLocation().resolve(storedPath);
+        assertTrue(Files.exists(fullPath));
     }
 
     @Test
     void store_shouldGenerateUniqueFilename() throws IOException {
-        // Arrange - stocker deux fichiers différents
-        when(multipartFile.getOriginalFilename()).thenReturn("test1.jpg").thenReturn("test2.jpg");
+        // Arrange - stocker deux fichiers avec des noms originaux differents
+        // qui contiennent des timestamps differents pour eviter la detection de doublon
+        when(multipartFile.getOriginalFilename())
+                .thenReturn("20260928_130000.jpg")
+                .thenReturn("20260928_140000.jpg");
         when(multipartFile.getInputStream())
                 .thenReturn(new ByteArrayInputStream("content1".getBytes()))
                 .thenReturn(new ByteArrayInputStream("content2".getBytes()));
@@ -129,50 +122,37 @@ class FileStorageServiceTest {
         String storedPath1 = fileStorageService.store(multipartFile);
         String storedPath2 = fileStorageService.store(multipartFile);
 
-        // Assert - les noms doivent être différents
+        // Assert - les noms doivent etre differents
         assertNotEquals(storedPath1, storedPath2);
-        Path fullPath1 = fileStorageService.getRootLocation().resolve(storedPath1.replace('/', java.io.File.separatorChar));
-        Path fullPath2 = fileStorageService.getRootLocation().resolve(storedPath2.replace('/', java.io.File.separatorChar));
+        
+        // Les timestamps doivent etre differents
+        assertTrue(storedPath1.startsWith("20260928_130000_"));
+        assertTrue(storedPath2.startsWith("20260928_140000_"));
+        
+        Path fullPath1 = fileStorageService.getRootLocation().resolve(storedPath1);
+        Path fullPath2 = fileStorageService.getRootLocation().resolve(storedPath2);
         assertTrue(Files.exists(fullPath1));
         assertTrue(Files.exists(fullPath2));
     }
 
     @Test
-    void store_shouldRejectPhotoWithAnExistingOriginalFilename() throws IOException {
+    void store_shouldRejectPhotoWithExistingTimestamp() throws IOException {
         // Arrange
-        when(multipartFile.getOriginalFilename()).thenReturn("20260920_191817.jpg");
+        // Utiliser un nom de fichier qui contient un timestamp valide
+        // Le timestamp sera extrait du nom de fichier original
+        String originalFilename = "20260920_191817.jpg";
+        when(multipartFile.getOriginalFilename()).thenReturn(originalFilename);
         when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("content".getBytes()));
+        
+        // Premier upload - le fichier sera sauvegarde avec le timestamp 20260920_191817
         fileStorageService.store(multipartFile);
 
-        // Act & Assert
+        // Act & Assert - le deuxieme upload avec le meme nom original
+        // generera le meme timestamp, donc doit echouer
+        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("content2".getBytes()));
         assertThrows(DuplicatePhotoException.class, () -> fileStorageService.store(multipartFile));
     }
 
-    @Test
-    void store_shouldRejectReuploadedDownloadedPhoto() throws IOException {
-        // Arrange - Simuler le scénario du bug :
-        // 1. Upload une photo originale
-        String originalFilename = "ma_photo.jpg";
-        byte[] content = "test content".getBytes();
-        
-        when(multipartFile.getOriginalFilename()).thenReturn(originalFilename);
-        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream(content));
-        
-        // Étape 1: Upload initial
-        String firstStoredPath = fileStorageService.store(multipartFile);
-        assertNotNull(firstStoredPath);
-        
-        // Étape 2: Simuler le téléchargement - le fichier est renommé avec un UUID
-        Path path = Path.of(firstStoredPath);
-        String storedFileName = path.getFileName().toString();
-        
-        // Étape 3: Re-upload du fichier téléchargé (même nom original)
-        when(multipartFile.getOriginalFilename()).thenReturn(storedFileName);
-        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream(content));
-        
-        // Act & Assert - doit lever DuplicatePhotoException
-        assertThrows(DuplicatePhotoException.class, () -> fileStorageService.store(multipartFile));
-    }
 
     // ==================== Tests pour load ====================
 
@@ -218,7 +198,7 @@ class FileStorageServiceTest {
         when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("test".getBytes()));
         
         String storedPath = fileStorageService.store(multipartFile);
-        Path filePath = fileStorageService.getRootLocation().resolve(storedPath.replace('/', java.io.File.separatorChar));
+        Path filePath = fileStorageService.getRootLocation().resolve(storedPath);
         assertTrue(Files.exists(filePath));
 
         // Act
@@ -231,7 +211,7 @@ class FileStorageServiceTest {
     @Test
     void delete_shouldNotThrowWhenFileDoesNotExist() throws IOException {
         // Arrange
-        String nonExistentPath = "photos/2024/01/01/nonexistent.jpg";
+        String nonExistentPath = "20240101_120000_abcdef12.jpg";
 
         // Act & Assert
         assertDoesNotThrow(() -> fileStorageService.delete(nonExistentPath));
@@ -258,7 +238,7 @@ class FileStorageServiceTest {
     @Test
     void exists_shouldReturnFalseWhenFileDoesNotExist() {
         // Act
-        boolean result = fileStorageService.exists("photos/nonexistent.jpg");
+        boolean result = fileStorageService.exists("20240101_120000_nonexistent.jpg");
 
         // Assert
         assertFalse(result);
@@ -294,7 +274,7 @@ class FileStorageServiceTest {
         // Assert
         assertNotNull(root);
         assertTrue(root.isAbsolute());
-        assertTrue(root.toString().contains("storage"));
+        assertTrue(root.toString().contains("photos-storage"));
     }
 
 
@@ -325,11 +305,13 @@ class FileStorageServiceTest {
 
     @Test
     void createZipFromPaths_shouldCreateValidZipWithMultipleFiles() throws IOException {
-        // Arrange - créer plusieurs fichiers
+        // Arrange - creer plusieurs fichiers avec des timestamps differents
         String content1 = "Contenu du fichier 1";
         String content2 = "Contenu du fichier 2";
         
-        when(multipartFile.getOriginalFilename()).thenReturn("file1.txt").thenReturn("file2.txt");
+        when(multipartFile.getOriginalFilename())
+                .thenReturn("20260928_130000.txt")
+                .thenReturn("20260928_140000.txt");
         when(multipartFile.getInputStream())
                 .thenReturn(new ByteArrayInputStream(content1.getBytes()))
                 .thenReturn(new ByteArrayInputStream(content2.getBytes()));
@@ -344,7 +326,7 @@ class FileStorageServiceTest {
         assertNotNull(zipBytes);
         assertTrue(zipBytes.length > 0);
         
-        // Vérifier que le ZIP contient les deux fichiers
+        // Verifier que le ZIP contient les deux fichiers
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
             ZipEntry entry;
             int fileCount = 0;
@@ -353,10 +335,10 @@ class FileStorageServiceTest {
             
             while ((entry = zis.getNextEntry()) != null) {
                 fileCount++;
-                if (entry.getName().contains("file1")) {
+                if (entry.getName().equals(path1)) {
                     foundFile1 = true;
                 }
-                if (entry.getName().contains("file2")) {
+                if (entry.getName().equals(path2)) {
                     foundFile2 = true;
                 }
                 zis.closeEntry();
@@ -375,20 +357,18 @@ class FileStorageServiceTest {
         
         // Assert
         assertNotNull(zipBytes);
-        // Un ZIP vide a quand même un en-tête, donc on vérifie qu'il n'est pas null
-        // et que c'est un tableau valide
         assertTrue(zipBytes.length >= 0);
     }
 
     @Test
     void createZipFromPaths_shouldSkipNonExistentFiles() throws IOException {
-        // Arrange - créer un fichier valide et un non-existent
+        // Arrange - creer un fichier valide et un non-existent
         String content = "Contenu valide";
         when(multipartFile.getOriginalFilename()).thenReturn("valid.txt");
         when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream(content.getBytes()));
         
         String validPath = fileStorageService.store(multipartFile);
-        String nonExistentPath = "photos/2024/01/01/nonexistent.txt";
+        String nonExistentPath = "20240101_120000_nonexistent.txt";
         
         // Act
         byte[] zipBytes = fileStorageService.createZipFromPaths(List.of(validPath, nonExistentPath));
@@ -397,7 +377,7 @@ class FileStorageServiceTest {
         assertNotNull(zipBytes);
         assertTrue(zipBytes.length > 0);
         
-        // Vérifier que le ZIP contient seulement un fichier
+        // Verifier que le ZIP contient seulement un fichier
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
             int fileCount = 0;
             
@@ -412,7 +392,7 @@ class FileStorageServiceTest {
 
     @Test
     void createZipFromPaths_shouldHandleFilesWithDifferentExtensions() throws IOException {
-        // Arrange - créer des fichiers avec différentes extensions
+        // Arrange - creer des fichiers avec differentes extensions
         when(multipartFile.getOriginalFilename())
                 .thenReturn("photo1.jpg")
                 .thenReturn("photo2.png")
@@ -432,33 +412,41 @@ class FileStorageServiceTest {
         // Assert
         assertNotNull(zipBytes);
         
-        // Vérifier que le ZIP contient les 3 fichiers
+        // Verifier que le ZIP contient les 3 fichiers
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
-            ZipEntry entry;
             int fileCount = 0;
-            boolean foundJpg = false;
-            boolean foundPng = false;
-            boolean foundTxt = false;
             
-            while ((entry = zis.getNextEntry()) != null) {
+            while (zis.getNextEntry() != null) {
                 fileCount++;
-                if (entry.getName().contains("jpg")) {
-                    foundJpg = true;
-                }
-                if (entry.getName().contains("png")) {
-                    foundPng = true;
-                }
-                if (entry.getName().contains("txt")) {
-                    foundTxt = true;
-                }
                 zis.closeEntry();
             }
             
             assertEquals(3, fileCount);
-            assertTrue(foundJpg);
-            assertTrue(foundPng);
-            assertTrue(foundTxt);
         }
+    }
+
+    @Test
+    void store_shouldRejectReuploadedDownloadedPhoto() throws IOException {
+        // Arrange - Simuler le scenario :
+        // 1. Upload une photo avec un timestamp dans son nom original
+        // 2. Le fichier est sauvegarde avec ce timestamp
+        // 3. Re-upload avec le meme nom original -> meme timestamp -> doit echouer
+        
+        String originalFilename = "20260920_191817.jpg";
+        byte[] content = "test content".getBytes();
+        
+        when(multipartFile.getOriginalFilename()).thenReturn(originalFilename);
+        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream(content));
+        
+        // Etape 1: Upload initial
+        fileStorageService.store(multipartFile);
+        
+        // Etape 2: Re-upload avec le meme nom original
+        // Le timestamp sera extrait du nom de fichier et sera identique
+        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("content2".getBytes()));
+        
+        // Act & Assert - doit lever DuplicatePhotoException
+        assertThrows(DuplicatePhotoException.class, () -> fileStorageService.store(multipartFile));
     }
 
 

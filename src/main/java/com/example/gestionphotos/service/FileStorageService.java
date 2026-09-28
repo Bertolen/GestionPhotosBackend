@@ -22,111 +22,92 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 /**
- * Service pour gérer le stockage des fichiers photos sur le système de fichiers.
- * Les photos sont organisées par année/mois/jour dans la structure :
- * /storage/photos/{YYYY}/{MM}/{DD}/{filename}_{timestamp}.{ext}
+ * Service pour gerer le stockage des fichiers photos sur le systeme de fichiers.
+ * Les fichiers sont nommes avec leur timestamp de creation : YYYYMMDD_HHmmss_[UUID8].ext
  */
 @Service
 public class FileStorageService {
 
     private final Path rootLocation;
-    
-    // Formatter pour les dossiers : YYYY/MM/DD
-    private static final DateTimeFormatter DATE_FOLDER_FORMATTER = DateTimeFormatter.ofPattern("yyyy/MM/dd");
-    
+
     public FileStorageService(@Value("${app.storage.path}") String storagePath) throws IOException {
         this.rootLocation = Paths.get(storagePath).toAbsolutePath().normalize();
         Files.createDirectories(this.rootLocation);
     }
 
     /**
-     * Sauvegarde un fichier multipart dans le système de stockage.
-     * Crée l'arborescence de dossiers par date si nécessaire.
+     * Sauvegarde un fichier multipart dans le systeme de stockage.
+     * Les fichiers sont nommes avec leur timestamp de creation : YYYYMMDD_HHmmss_[UUID8].ext
      * 
-     * @param file le fichier à sauvegarder
-     * @return le chemin relatif du fichier sauvegardé
+     * @param file le fichier a sauvegarder
+     * @return le chemin relatif du fichier sauvegarde
      * @throws IOException en cas d'erreur de sauvegarde
      */
     public String store(MultipartFile file) throws IOException {
-        // Générer un nom de fichier unique avec timestamp
         String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
         String extension = getFileExtension(originalFilename);
         LocalDateTime uploadDate = LocalDateTime.now();
-
-        if (isAlreadyStored(originalFilename)) {
+        
+        // Extraire le timestamp depuis le nom de fichier (si disponible) ou utiliser la date actuelle
+        LocalDateTime creationDateTime = PhotoTimestampUtils.extractPhotoTimestamp(originalFilename)
+                .orElse(uploadDate);
+        
+        // Formater le timestamp au format YYYYMMDD_HHmmss
+        String timestamp = creationDateTime.format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+        
+        // Verifier si une photo avec ce timestamp existe deja
+        if (isAlreadyStoredByTimestamp(timestamp, extension)) {
             throw new DuplicatePhotoException(
-                    "La photo '" + originalFilename + "' existe déjà dans le système de stockage");
+                    "Une photo avec le timestamp " + timestamp + " existe deja dans le systeme de stockage");
         }
-
+        
+        // Generer un UUID unique
         String uniqueId = UUID.randomUUID().toString().substring(0, 8);
         
-        // Construire le nom du fichier : originalName_timestamp_UUID.ext
-        String fileName = String.format("%s_%s%s", 
-                removeExtension(originalFilename), 
-                uniqueId,
-                extension);
+        // Construire le nom du fichier : YYYYMMDD_HHmmss_[UUID8].ext
+        String fileName = String.format("%s_%s%s", timestamp, uniqueId, extension);
 
-        // Construire le chemin complet avec arborescence de dates
-        LocalDateTime dateForStorage = PhotoTimestampUtils.extractPhotoTimestamp(originalFilename)
-                .orElse(uploadDate);
-        String datePath = dateForStorage.format(DATE_FOLDER_FORMATTER);
+        // Construire le chemin complet dans le repertoire racine
         Path destinationPath = this.rootLocation
-                .resolve("photos")
-                .resolve(datePath)
                 .resolve(fileName)
                 .normalize();
 
-        // Créer les dossiers parents si nécessaire
-        Files.createDirectories(destinationPath.getParent());
+        // Creer le dossier s'il n'existe pas
+        Files.createDirectories(this.rootLocation);
 
         // Sauvegarder le fichier
         Files.copy(file.getInputStream(), destinationPath, StandardCopyOption.REPLACE_EXISTING);
 
-        // Retourner le chemin relatif (pour stocker en base ou dans le DTO)
-        // Utiliser des / pour la portabilité
-        return Paths.get("photos").resolve(datePath).resolve(fileName).toString().replace('\\', '/');
+        // Retourner le chemin relatif
+        return fileName.replace('\\', '/');
     }
 
     /**
-     * Vérifie si une photo portant le même nom d'origine a déjà été stockée.
-     *
-     * @param originalFilename le nom du fichier envoyé
-     * @return true si une photo correspondante est déjà présente
+     * Verifie si une photo avec ce timestamp existe deja dans le stockage.
+     * 
+     * @param timestamp le timestamp au format YYYYMMDD_HHmmss
+     * @param extension l'extension du fichier
+     * @return true si une photo avec ce timestamp existe deja
      * @throws IOException en cas d'erreur de parcours du stockage
      */
-    private boolean isAlreadyStored(String originalFilename) throws IOException {
-        if (originalFilename == null || originalFilename.isBlank()) {
+    private boolean isAlreadyStoredByTimestamp(String timestamp, String extension) throws IOException {
+        if (timestamp == null || timestamp.isBlank() || extension == null || extension.isBlank()) {
             return false;
         }
 
-        Path photosLocation = this.rootLocation.resolve("photos");
-        if (!Files.exists(photosLocation)) {
-            return false;
-        }
-
-        String baseName = removeExtension(originalFilename);
-        String extension = getFileExtension(originalFilename);
+        // Pattern pour matcher : timestamp + _ + UUID8 + extension
+        String pattern = Pattern.quote(timestamp) + "_[a-f0-9]{8}" + Pattern.quote(extension) + "$";
         
-        // Pattern pour matcher : baseName + _ + (n'importe quoi) + extension
-        // Cela permet de détecter des doublons quelle que soit la date ou l'UUID dans le nom
-        String storedFilenamePattern = "(" 
-                + Pattern.quote(baseName)
-                + "_.*"
-                + Pattern.quote(extension)
-                + "$)|("
-                + Pattern.quote(originalFilename)
-                + "$)";;
-        
-        try (var paths = Files.walk(photosLocation)) {
+        try (var paths = Files.walk(this.rootLocation)) {
             return paths
                     .filter(Files::isRegularFile)
                     .map(path -> path.getFileName().toString())
-                    .anyMatch(filename -> filename.matches(storedFilenamePattern));
+                    .anyMatch(filename -> filename.matches(pattern));
         }
     }
 
     /**
-     * Charge un fichier depuis le système de stockage.
+     * Charge un fichier depuis le systeme de stockage.
      * 
      * @param storedPath le chemin relatif du fichier
      * @return le chemin absolu du fichier
@@ -136,7 +117,7 @@ public class FileStorageService {
     }
 
     /**
-     * Supprime un fichier du système de stockage.
+     * Supprime un fichier du systeme de stockage.
      * 
      * @param storedPath le chemin relatif du fichier
      * @throws IOException en cas d'erreur de suppression
@@ -150,14 +131,14 @@ public class FileStorageService {
     }
 
     /**
-     * Nettoie récursivement les dossiers vides à partir du chemin donné.
+     * Nettoie recursivement les dossiers vides a partir du chemin donne.
      * 
-     * @param directory le dossier à vérifier
+     * @param directory le dossier a verifier
      */
     private void cleanupEmptyDirectories(Path directory) {
         try {
             if (directory != null && Files.isDirectory(directory)) {
-                // Vérifier si le dossier est vide
+                // Verifier si le dossier est vide
                 if (Files.list(directory).count() == 0) {
                     Files.delete(directory);
                     cleanupEmptyDirectories(directory.getParent());
@@ -204,7 +185,7 @@ public class FileStorageService {
     }
 
     /**
-     * Vérifie si un fichier existe dans le stockage.
+     * Verifie si un fichier existe dans le stockage.
      * 
      * @param storedPath le chemin relatif du fichier
      * @return true si le fichier existe
@@ -233,11 +214,11 @@ public class FileStorageService {
     }
 
     /**
-     * Crée un fichier ZIP contenant plusieurs fichiers.
+     * Cree un fichier ZIP contenant plusieurs fichiers.
      * 
-     * @param storedPaths liste des chemins relatifs des fichiers à inclure
+     * @param storedPaths liste des chemins relatifs des fichiers a inclure
      * @return tableau d'octets contenant le fichier ZIP
-     * @throws IOException en cas d'erreur de création du ZIP
+     * @throws IOException en cas d'erreur de creation du ZIP
      */
     public byte[] createZipFromPaths(List<String> storedPaths) throws IOException {
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
@@ -246,7 +227,7 @@ public class FileStorageService {
             for (String storedPath : storedPaths) {
                 Path filePath = this.rootLocation.resolve(storedPath).normalize();
                 if (Files.exists(filePath) && Files.isRegularFile(filePath)) {
-                    // Utiliser seulement le nom de fichier dans le ZIP pour éviter les chemins absolus
+                    // Utiliser seulement le nom de fichier dans le ZIP pour eviter les chemins absolus
                     String fileName = Path.of(storedPath).getFileName().toString();
                     ZipEntry zipEntry = new ZipEntry(fileName);
                     zipOutputStream.putNextEntry(zipEntry);
