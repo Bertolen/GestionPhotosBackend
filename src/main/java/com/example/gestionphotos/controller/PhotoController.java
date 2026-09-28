@@ -26,9 +26,9 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.example.gestionphotos.dto.PhotoDto;
-import com.example.gestionphotos.service.FileStorageService;
 import com.example.gestionphotos.exception.DuplicatePhotoException;
 import com.example.gestionphotos.exception.MultiplePhotoUploadException;
+import com.example.gestionphotos.service.FileStorageService;
 import com.example.gestionphotos.service.PhotoService;
 
 /**
@@ -76,7 +76,7 @@ public class PhotoController {
         } catch (DuplicatePhotoException e) {
             logger.info("Photo ignorée car déjà présente : {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(java.util.Map.of("message", e.getMessage()));
+            .body(java.util.Map.of("message", e.getMessage()));
         } catch (IOException e) {
             logger.error("Erreur IO : {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
@@ -105,22 +105,120 @@ public class PhotoController {
             return ResponseEntity.ok(photoDtos);
         } catch (MultiplePhotoUploadException e) {
             logger.warn("{} erreur(s) pendant l'upload multiple", e.getErrors().size());
-            List<java.util.Map<String, String>> errors = e.getErrors().stream()
-                    .map(error -> java.util.Map.of(
-                            "type", error.getClass().getSimpleName(),
-                            "message", error.getMessage() != null ? error.getMessage() : "Erreur inconnue"))
-                    .toList();
+            List<java.util.Map<String, String>> errors = e.getErrors()
+                .stream()
+                .map(error -> java.util.Map.of(
+                    "type", error.getClass().getSimpleName(),
+                    "message", error.getMessage() != null ? error.getMessage() : "Erreur inconnue"))
+                .toList();
             return ResponseEntity.status(HttpStatus.MULTI_STATUS)
-                    .body(java.util.Map.of(
-                            "uploadedPhotos", e.getUploadedPhotos(),
-                            "errors", errors));
+                .body(java.util.Map.of(
+                    "uploadedPhotos", e.getUploadedPhotos(),
+                    "errors", errors));
         } catch (IllegalArgumentException e) {
             logger.error("Erreur de validation : {}", e.getMessage());
             return ResponseEntity.badRequest().body(null);
         } catch (DuplicatePhotoException e) {
             logger.info("Photo ignorée car déjà présente : {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(java.util.Map.of("message", e.getMessage()));
+            .body(java.util.Map.of("message", e.getMessage()));
+        } catch (IOException e) {
+            logger.error("Erreur IO : {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+            
+    /**
+    * Upload une photo avec une date de création spécifiée.
+    * 
+    * @param file le fichier à uploader
+    * @param creationDate la date de création de la photo (format: yyyy-MM-dd'T'HH:mm:ss)
+    * @return ResponseEntity avec le PhotoDto de la photo sauvegardée
+    */
+    @PostMapping("/upload/single-with-date")
+    public ResponseEntity<?> uploadPhotoWithDate(
+        @RequestParam("file") MultipartFile file,
+        @RequestParam("creationDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime creationDate) {
+        logger.info("Appel de uploadPhotoWithDate");
+        logger.debug("Paramètre file : null={}, empty={}, creationDate={}", 
+        file == null, file != null && file.isEmpty(), creationDate);
+        
+        if (file != null) {
+            logger.debug("File details - name: {}, size: {}, contentType: {}", 
+            file.getOriginalFilename(), file.getSize(), file.getContentType());
+        }
+        
+        try {
+            PhotoDto photoDto = photoService.uploadPhotoWithDate(file, creationDate);
+            logger.info("Photo uploadée avec date personnalisée, ID: {}, creationDate: {}", photoDto.id(), creationDate);
+            return ResponseEntity.ok(photoDto);
+        } catch (IllegalArgumentException e) {
+            logger.error("Erreur de validation : {}", e.getMessage());
+            return ResponseEntity.badRequest().body(null);
+        } catch (DuplicatePhotoException e) {
+            logger.info("Photo ignorée car déjà présente : {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(java.util.Map.of("message", e.getMessage()));
+        } catch (IOException e) {
+            logger.error("Erreur IO : {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+                
+    /**
+    * Upload plusieurs photos avec leurs dates de création spécifiées.
+    * 
+    * @param files les fichiers à uploader
+    * @param creationDates liste des dates de création pour chaque fichier (format: yyyy-MM-dd'T'HH:mm:ss)
+    * @return ResponseEntity avec la liste des PhotoDto sauvegardées
+    */
+    @PostMapping("/upload/multiple-with-date")
+    public ResponseEntity<?> uploadPhotosWithDates(
+        @RequestParam("files") MultipartFile[] files,
+        @RequestParam("creationDates") List<String> creationDates) {
+        logger.info("Appel de uploadPhotosWithDates");
+        logger.debug("Paramètre files : null={}, length={}, creationDates size={}", 
+        files == null, files != null ? files.length : 0, creationDates != null ? creationDates.size() : 0);
+        
+        if (files != null) {
+            for(int i = 0; i < files.length; i++) {
+                logger.debug("File {} details - name: {}, size: {}, contentType: {}, creationDate: {}", 
+                i, files[i].getOriginalFilename(), files[i].getSize(), files[i].getContentType(),
+                i < creationDates.size() ? creationDates.get(i) : "N/A");
+            }
+        }
+        
+        try {
+            List<LocalDateTime> parsedDates = creationDates.stream()
+            .map(dateStr -> LocalDateTime.parse(dateStr, java.time.format.DateTimeFormatter.ISO_DATE_TIME))
+            .toList();
+            List<PhotoDto> photoDtos = photoService.uploadPhotosWithDates(files, parsedDates);
+            logger.info("Photos uploadées avec dates personnalisées, IDs: {}", 
+            photoDtos.stream().map(p -> p.id()).toArray());
+            return ResponseEntity.ok(photoDtos);
+        } catch (java.time.format.DateTimeParseException e) {
+            logger.error("Format de date invalide : {}", e.getMessage());
+            return ResponseEntity.badRequest()
+            .body(java.util.Map.of("message", "Format de date invalide. Utilisez le format ISO: yyyy-MM-dd'T'HH:mm:ss"));
+        } catch (MultiplePhotoUploadException e) {
+            logger.warn("{} erreur(s) pendant l'upload multiple avec dates", e.getErrors().size());
+            List<java.util.Map<String, String>> errors = e.getErrors()
+                .stream()
+                .map(error -> java.util.Map.of(
+                    "type", error.getClass().getSimpleName(),
+                    "message", error.getMessage() != null ? error.getMessage() : "Erreur inconnue"))
+                .toList();
+            return ResponseEntity.status(HttpStatus.MULTI_STATUS)
+                .body(java.util.Map.of(
+                    "uploadedPhotos", e.getUploadedPhotos(),
+                    "errors", errors));
+        } catch (IllegalArgumentException e) {
+            logger.error("Erreur de validation : {}", e.getMessage());
+            return ResponseEntity.badRequest().body(null);
+        } catch (DuplicatePhotoException e) {
+            logger.info("Photo ignorée car déjà présente : {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(java.util.Map.of("message", e.getMessage()));
         } catch (IOException e) {
             logger.error("Erreur IO : {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
@@ -166,137 +264,137 @@ public class PhotoController {
     public ResponseEntity<List<PhotoDto>> getPhotosByDateRange(
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fromDate,
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime toDate) {
-            logger.info("Appel de getPhotosByDateRange");
-            logger.debug("fromDate={}, toDate={}", fromDate, toDate);
-            List<PhotoDto> photos = photoService.getPhotosByDateRange(fromDate, toDate);
-            return ResponseEntity.ok(photos);
+        logger.info("Appel de getPhotosByDateRange");
+        logger.debug("fromDate={}, toDate={}", fromDate, toDate);
+        List<PhotoDto> photos = photoService.getPhotosByDateRange(fromDate, toDate);
+        return ResponseEntity.ok(photos);
+    }
+    
+    /**
+    * Télécharge une photo.
+    * 
+    * @param id l'ID de la photo à télécharger
+    * @return ResponseEntity avec le fichier à télécharger
+    */
+    @GetMapping("/{id}/download")
+    public ResponseEntity<Resource> downloadPhoto(@PathVariable String id) {
+        logger.info("Appel de downloadPhoto");
+        PhotoDto photo = photoService.getPhotoById(id);
+        
+        if (photo == null) {
+            return ResponseEntity.notFound().build();
         }
         
-        /**
-        * Télécharge une photo.
-        * 
-        * @param id l'ID de la photo à télécharger
-        * @return ResponseEntity avec le fichier à télécharger
-        */
-        @GetMapping("/{id}/download")
-        public ResponseEntity<Resource> downloadPhoto(@PathVariable String id) {
-            logger.info("Appel de downloadPhoto");
-            PhotoDto photo = photoService.getPhotoById(id);
+        try {
+            Path filePath = fileStorageService.load(photo.storedPath());
+            Resource resource = new UrlResource(filePath.toUri());
             
-            if (photo == null) {
+            if (resource.exists() || resource.isReadable()) {
+                return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(photo.mimeType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, 
+                    "attachment; filename=\"" + photo.originalName() + "\"")
+                .body(resource);
+            } else {
                 return ResponseEntity.notFound().build();
             }
-            
-            try {
-                Path filePath = fileStorageService.load(photo.storedPath());
-                Resource resource = new UrlResource(filePath.toUri());
-                
-                if (resource.exists() || resource.isReadable()) {
-                    return ResponseEntity.ok()
-                    .contentType(MediaType.parseMediaType(photo.mimeType()))
-                    .header(HttpHeaders.CONTENT_DISPOSITION, 
-                        "attachment; filename=\"" + photo.originalName() + "\"")
-                        .body(resource);
-                    } else {
-                        return ResponseEntity.notFound().build();
-                    }
-                } catch (IOException e) {
-                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-                }
-            }
-            
-            /**
-            * Supprime une photo.
-            * 
-            * @param id l'ID de la photo à supprimer
-            * @return ResponseEntity avec un message de succès ou d'erreur
-            */
-            @DeleteMapping("/{id}")
-            public ResponseEntity<String> deletePhoto(@PathVariable String id) {
-                logger.info("Appel de deletePhoto");
-                boolean deleted = photoService.deletePhoto(id);
-                
-                if (deleted) {
-                    return ResponseEntity.ok("Photo supprimée avec succès");
-                }
-                return ResponseEntity.notFound().build();
-            }
-            
-            /**
-            * Récupère les métadonnées d'une photo.
-            * 
-            * @param id l'ID de la photo
-            * @return ResponseEntity avec le PhotoDto contenant les métadonnées
-            */
-            @GetMapping("/{id}/metadata")
-            public ResponseEntity<PhotoDto> getPhotoMetadata(@PathVariable String id) {
-                logger.info("Appel de getPhotoMetadata");
-                PhotoDto photo = photoService.getPhotoById(id);
-                if (photo != null) {
-                    return ResponseEntity.ok(photo);
-                }
-                return ResponseEntity.notFound().build();
-            }
-            
-            /**
-            * Point d'entrée pour vérifier que le service est opérationnel.
-            * 
-            * @return ResponseEntity avec un message de statu
-            */
-            @GetMapping("/status")
-            public ResponseEntity<String> status() {
-                logger.info("Appel de status");
-                return ResponseEntity.ok("Service Photo est opérationnel");
-            }
-
-            /**
-            * Télécharge plusieurs photos en un seul fichier ZIP.
-            * 
-            * @param photoIds liste des identifiants de photos à télécharger
-            * @return ResponseEntity avec le fichier ZIP à télécharger
-            */
-            @PostMapping("/download/bulk")
-            public ResponseEntity<byte[]> downloadPhotosBulk(@RequestParam List<String> photoIds) {
-                logger.info("Appel de downloadPhotosBulk");
-                logger.debug("Paramètre photoIds : {}", photoIds);
-                
-                // Supprimer les doublons
-                List<String> uniquePhotoIds = photoIds.stream()
-                        .distinct()
-                        .collect(Collectors.toList());
-                
-                logger.debug("Identifiants uniques : {}", uniquePhotoIds);
-                
-                // Récupérer les photos correspondantes
-                List<PhotoDto> photos = photoService.getPhotosByIds(uniquePhotoIds);
-                
-                if (photos.isEmpty()) {
-                    logger.warn("Aucune photo trouvée pour les identifiants fournis");
-                    return ResponseEntity.notFound().build();
-                }
-                
-                logger.debug("Photos trouvées : {}", photos.size());
-                
-                try {
-                    // Créer le ZIP avec les photos
-                    List<String> storedPaths = photos.stream()
-                            .map(PhotoDto::storedPath)
-                            .collect(Collectors.toList());
-                    
-                    byte[] zipBytes = fileStorageService.createZipFromPaths(storedPaths);
-                    
-                    // Déterminer le nom du fichier ZIP
-                    String zipFileName = "photos_" + java.time.LocalDate.now() + ".zip";
-                    
-                    return ResponseEntity.ok()
-                            .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                            .header(HttpHeaders.CONTENT_DISPOSITION, 
-                                    "attachment; filename=\"" + zipFileName + "\"")
-                            .body(zipBytes);
-                } catch (IOException e) {
-                    logger.error("Erreur lors de la création du ZIP : {}", e.getMessage(), e);
-                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-                }
-            }
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+        
+    /**
+    * Supprime une photo.
+    * 
+    * @param id l'ID de la photo à supprimer
+    * @return ResponseEntity avec un message de succès ou d'erreur
+    */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<String> deletePhoto(@PathVariable String id) {
+        logger.info("Appel de deletePhoto");
+        boolean deleted = photoService.deletePhoto(id);
+        
+        if (deleted) {
+            return ResponseEntity.ok("Photo supprimée avec succès");
+        }
+        return ResponseEntity.notFound().build();
+    }
+    
+    /**
+    * Récupère les métadonnées d'une photo.
+    * 
+    * @param id l'ID de la photo
+    * @return ResponseEntity avec le PhotoDto contenant les métadonnées
+    */
+    @GetMapping("/{id}/metadata")
+    public ResponseEntity<PhotoDto> getPhotoMetadata(@PathVariable String id) {
+        logger.info("Appel de getPhotoMetadata");
+        PhotoDto photo = photoService.getPhotoById(id);
+        if (photo != null) {
+            return ResponseEntity.ok(photo);
+        }
+        return ResponseEntity.notFound().build();
+    }
+    
+    /**
+    * Point d'entrée pour vérifier que le service est opérationnel.
+    * 
+    * @return ResponseEntity avec un message de statu
+    */
+    @GetMapping("/status")
+    public ResponseEntity<String> status() {
+        logger.info("Appel de status");
+        return ResponseEntity.ok("Service Photo est opérationnel");
+    }
+    
+    /**
+    * Télécharge plusieurs photos en un seul fichier ZIP.
+    * 
+    * @param photoIds liste des identifiants de photos à télécharger
+    * @return ResponseEntity avec le fichier ZIP à télécharger
+    */
+    @PostMapping("/download/bulk")
+    public ResponseEntity<byte[]> downloadPhotosBulk(@RequestParam List<String> photoIds) {
+        logger.info("Appel de downloadPhotosBulk");
+        logger.debug("Paramètre photoIds : {}", photoIds);
+        
+        // Supprimer les doublons
+        List<String> uniquePhotoIds = photoIds.stream()
+        .distinct()
+        .collect(Collectors.toList());
+        
+        logger.debug("Identifiants uniques : {}", uniquePhotoIds);
+        
+        // Récupérer les photos correspondantes
+        List<PhotoDto> photos = photoService.getPhotosByIds(uniquePhotoIds);
+        
+        if (photos.isEmpty()) {
+            logger.warn("Aucune photo trouvée pour les identifiants fournis");
+            return ResponseEntity.notFound().build();
         }
         
+        logger.debug("Photos trouvées : {}", photos.size());
+        
+        try {
+            // Créer le ZIP avec les photos
+            List<String> storedPaths = photos.stream()
+            .map(PhotoDto::storedPath)
+            .collect(Collectors.toList());
+            
+            byte[] zipBytes = fileStorageService.createZipFromPaths(storedPaths);
+            
+            // Déterminer le nom du fichier ZIP
+            String zipFileName = "photos_" + java.time.LocalDate.now() + ".zip";
+            
+            return ResponseEntity.ok()
+            .contentType(MediaType.APPLICATION_OCTET_STREAM)
+            .header(HttpHeaders.CONTENT_DISPOSITION, 
+                "attachment; filename=\"" + zipFileName + "\"")
+                .body(zipBytes);
+            } catch (IOException e) {
+                logger.error("Erreur lors de la création du ZIP : {}", e.getMessage(), e);
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            }
+        }
+    }
+                

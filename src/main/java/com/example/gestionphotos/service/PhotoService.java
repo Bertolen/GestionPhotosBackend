@@ -48,37 +48,12 @@ public class PhotoService {
      * @throws IllegalArgumentException si le fichier est invalide
      */
     public PhotoDto uploadPhoto(MultipartFile file) throws IOException {
-        // Validation du fichier
         validateFile(file);
         
-        // Sauvegarder le fichier
         String storedPath = fileStorageService.store(file);
-        String fileName = Path.of(storedPath).getFileName().toString();
-        String uuid = extractUuidFromFilename(fileName);
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime creationDate = now;
+        LocalDateTime creationDate = extractCreationDateFromStoredFile(storedPath);
         
-        // Récupérer la date de création du fichier (si disponible)
-        try {
-            Path filePath = fileStorageService.load(storedPath);
-            creationDate = Files.getLastModifiedTime(filePath)
-                    .toInstant()
-                    .atZone(java.time.ZoneId.systemDefault())
-                    .toLocalDateTime();
-        } catch (Exception e) {
-            // Si on ne peut pas récupérer la date de création, utiliser la date d'upload
-        }
-        
-        return new PhotoDto(
-            uuid,
-            file.getOriginalFilename(),
-            storedPath,
-            fileName,
-            file.getSize(),
-            file.getContentType(),
-            now,
-            creationDate
-        );
+        return doUploadPhoto(file, storedPath, creationDate);
     }
 
     /**
@@ -97,6 +72,105 @@ public class PhotoService {
             try {
                 if (!file.isEmpty()) {
                     uploadedPhotos.add(uploadPhoto(file));
+                }
+            } catch (Exception e) {
+                errors.add(e);
+            }
+        }
+
+        if (!errors.isEmpty()) {
+            throw new MultiplePhotoUploadException(uploadedPhotos, errors);
+        }
+        
+        return uploadedPhotos;
+    }
+
+    /**
+     * Upload une photo avec une date de création spécifiée.
+     * 
+     * @param file le fichier à uploader
+     * @param creationDate la date de création à utiliser pour la photo
+     * @return PhotoDto contenant les métadonnées de la photo sauvegardée
+     * @throws IOException en cas d'erreur de sauvegarde
+     * @throws IllegalArgumentException si le fichier est invalide
+     */
+    public PhotoDto uploadPhotoWithDate(MultipartFile file, LocalDateTime creationDate) throws IOException {
+        validateFile(file);
+        
+        String storedPath = fileStorageService.store(file);
+        
+        return doUploadPhoto(file, storedPath, creationDate);
+    }
+
+    /**
+     * Méthode interne commune pour créer un PhotoDto après validation et sauvegarde.
+     * 
+     * @param file le fichier déjà validé
+     * @param storedPath le chemin où le fichier a été sauvegardé
+     * @param creationDate la date de création à utiliser
+     * @return PhotoDto contenant les métadonnées de la photo
+     */
+    private PhotoDto doUploadPhoto(MultipartFile file, String storedPath, LocalDateTime creationDate) {
+        String fileName = Path.of(storedPath).getFileName().toString();
+        String uuid = extractUuidFromFilename(fileName);
+        LocalDateTime now = LocalDateTime.now();
+        
+        return new PhotoDto(
+            uuid,
+            file.getOriginalFilename(),
+            storedPath,
+            fileName,
+            file.getSize(),
+            file.getContentType(),
+            now,
+            creationDate
+        );
+    }
+
+    /**
+     * Extrait la date de création à partir d'un fichier déjà sauvegardé.
+     * Tente de récupérer la date de modification du fichier système.
+     * 
+     * @param storedPath le chemin du fichier sauvegardé
+     * @return la date de création extraite, ou la date actuelle si indisponible
+     */
+    private LocalDateTime extractCreationDateFromStoredFile(String storedPath) {
+        LocalDateTime creationDate = LocalDateTime.now();
+        
+        try {
+            Path filePath = fileStorageService.load(storedPath);
+            creationDate = Files.getLastModifiedTime(filePath)
+                    .toInstant()
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .toLocalDateTime();
+        } catch (Exception e) {
+            // Si on ne peut pas récupérer la date de création, utiliser la date d'upload
+        }
+        
+        return creationDate;
+    }
+
+    /**
+     * Upload plusieurs photos avec leurs dates de création spécifiées.
+     * 
+     * @param files les fichiers à uploader
+     * @param creationDates liste des dates de création pour chaque fichier (doit avoir la même taille que files)
+     * @return Liste de PhotoDto pour chaque photo sauvegardée
+     * @throws IOException en cas d'erreur de sauvegarde
+     * @throws IllegalArgumentException si un fichier est invalide ou si les tailles ne correspondent pas
+     */
+    public List<PhotoDto> uploadPhotosWithDates(MultipartFile[] files, List<LocalDateTime> creationDates) throws IOException {
+        if (files == null || creationDates == null || files.length != creationDates.size()) {
+            throw new IllegalArgumentException("Le nombre de fichiers doit correspondre au nombre de dates de création");
+        }
+        
+        List<PhotoDto> uploadedPhotos = new ArrayList<>();
+        List<Exception> errors = new ArrayList<>();
+        
+        for (int i = 0; i < files.length; i++) {
+            try {
+                if (!files[i].isEmpty()) {
+                    uploadedPhotos.add(uploadPhotoWithDate(files[i], creationDates.get(i)));
                 }
             } catch (Exception e) {
                 errors.add(e);

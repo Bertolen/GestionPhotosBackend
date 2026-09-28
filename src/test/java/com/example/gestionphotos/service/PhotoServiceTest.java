@@ -512,4 +512,204 @@ class PhotoServiceTest {
     }
 
 
+    // ==================== Tests pour uploadPhotoWithDate ====================
+
+    @Test
+    void uploadPhotoWithDate_shouldCreateDtoWithSpecifiedCreationDate() throws IOException {
+        // Arrange
+        LocalDateTime specifiedDate = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+        when(multipartFile.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME);
+        when(multipartFile.getSize()).thenReturn(TEST_SIZE);
+        when(multipartFile.getContentType()).thenReturn(TEST_MIME_TYPE);
+        when(fileStorageService.store(multipartFile)).thenReturn(TEST_STORED_PATH);
+
+        // Act
+        PhotoDto result = photoService.uploadPhotoWithDate(multipartFile, specifiedDate);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(TEST_UUID, result.id());
+        assertEquals(TEST_ORIGINAL_NAME, result.originalName());
+        assertEquals(specifiedDate, result.creationDate());
+        assertNotNull(result.uploadDate());
+    }
+
+    @Test
+    void uploadPhotoWithDate_shouldThrowWhenFileIsNull() {
+        LocalDateTime specifiedDate = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+
+        try {
+            photoService.uploadPhotoWithDate(null, specifiedDate);
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            // expected
+        } catch (IOException e) {
+            fail("Unexpected IOException");
+        }
+    }
+
+    @Test
+    void uploadPhotoWithDate_shouldThrowWhenFileIsEmpty() {
+        // Arrange
+        LocalDateTime specifiedDate = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+        when(multipartFile.isEmpty()).thenReturn(true);
+
+        // Act & Assert
+        try {
+            photoService.uploadPhotoWithDate(multipartFile, specifiedDate);
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            // expected
+        } catch (IOException e) {
+            fail("Unexpected IOException");
+        }
+    }
+
+    @Test
+    void uploadPhotoWithDate_shouldThrowWhenFileExceedsMaxSize() {
+        // Arrange
+        LocalDateTime specifiedDate = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+        ReflectionTestUtils.setField(photoService, "maxFileSize", 1024L * 1024L); // 1MB
+        when(multipartFile.isEmpty()).thenReturn(false);
+        when(multipartFile.getSize()).thenReturn(2L * 1024L * 1024L); // 2MB
+
+        // Act & Assert
+        try {
+            photoService.uploadPhotoWithDate(multipartFile, specifiedDate);
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            // expected
+        } catch (IOException e) {
+            fail("Unexpected IOException");
+        }
+    }
+
+    @Test
+    void uploadPhotoWithDate_shouldThrowWhenMimeTypeNotAllowed() {
+        // Arrange
+        LocalDateTime specifiedDate = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+        ReflectionTestUtils.setField(photoService, "maxFileSize", 10L * 1024L * 1024L);
+        ReflectionTestUtils.setField(photoService, "allowedMimeTypes", 
+                new String[]{"image/jpeg", "image/png"});
+        when(multipartFile.isEmpty()).thenReturn(false);
+        when(multipartFile.getSize()).thenReturn(100L);
+        when(multipartFile.getContentType()).thenReturn("application/pdf");
+
+        // Act & Assert
+        try {
+            photoService.uploadPhotoWithDate(multipartFile, specifiedDate);
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            // expected
+        } catch (IOException e) {
+            fail("Unexpected IOException");
+        }
+    }
+
+
+    // ==================== Tests pour uploadPhotosWithDates ====================
+
+    @Test
+    void uploadPhotosWithDates_shouldUploadMultiplePhotosWithCustomDates() throws IOException {
+        // Arrange
+        LocalDateTime date1 = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+        LocalDateTime date2 = LocalDateTime.of(2023, 6, 16, 11, 45, 0);
+        MultipartFile[] files = new MultipartFile[]{multipartFile, multipartFile};
+
+        when(multipartFile.isEmpty()).thenReturn(false);
+        when(multipartFile.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME);
+        when(multipartFile.getSize()).thenReturn(TEST_SIZE);
+        when(multipartFile.getContentType()).thenReturn(TEST_MIME_TYPE);
+        when(fileStorageService.store(multipartFile))
+                .thenReturn(TEST_STORED_PATH + "_1")
+                .thenReturn(TEST_STORED_PATH + "_2");
+
+        // Act
+        List<PhotoDto> result = photoService.uploadPhotosWithDates(files, List.of(date1, date2));
+
+        // Assert
+        assertEquals(2, result.size());
+        assertEquals(date1, result.get(0).creationDate());
+        assertEquals(date2, result.get(1).creationDate());
+    }
+
+    @Test
+    void uploadPhotosWithDates_shouldThrowWhenCountsDoNotMatch() throws IOException {
+        // Arrange
+        LocalDateTime date = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+        MultipartFile[] files = new MultipartFile[]{multipartFile, multipartFile};
+
+        // Act & Assert
+        try {
+            photoService.uploadPhotosWithDates(files, List.of(date));
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("doit correspondre"));
+        }
+    }
+
+    @Test
+    void uploadPhotosWithDates_shouldThrowWhenFilesIsNull() throws IOException {
+        // Arrange
+        LocalDateTime date = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+
+        // Act & Assert
+        try {
+            photoService.uploadPhotosWithDates(null, List.of(date));
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            // expected
+        }
+    }
+
+    @Test
+    void uploadPhotosWithDates_shouldThrowWhenDatesIsNull() throws IOException {
+        // Arrange
+        MultipartFile[] files = new MultipartFile[]{multipartFile};
+
+        // Act & Assert
+        try {
+            photoService.uploadPhotosWithDates(files, null);
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            // expected
+        }
+    }
+
+    @Test
+    void uploadPhotosWithDates_shouldSkipEmptyFiles() throws IOException {
+        // Arrange
+        LocalDateTime date1 = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+        LocalDateTime date2 = LocalDateTime.of(2023, 6, 16, 11, 45, 0);
+        LocalDateTime date3 = LocalDateTime.of(2023, 6, 17, 12, 0, 0);
+
+        MultipartFile emptyFile = mock(MultipartFile.class);
+        MultipartFile validFile1 = mock(MultipartFile.class);
+        MultipartFile validFile2 = mock(MultipartFile.class);
+        MultipartFile[] files = new MultipartFile[]{emptyFile, validFile1, validFile2};
+
+        when(emptyFile.isEmpty()).thenReturn(true);
+        when(validFile1.isEmpty()).thenReturn(false);
+        when(validFile2.isEmpty()).thenReturn(false);
+        when(validFile1.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME);
+        when(validFile1.getSize()).thenReturn(TEST_SIZE);
+        when(validFile1.getContentType()).thenReturn(TEST_MIME_TYPE);
+        when(validFile2.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME + "2");
+        when(validFile2.getSize()).thenReturn(TEST_SIZE);
+        when(validFile2.getContentType()).thenReturn(TEST_MIME_TYPE);
+        when(fileStorageService.store(validFile1)).thenReturn(TEST_STORED_PATH + "_1");
+        when(fileStorageService.store(validFile2)).thenReturn(TEST_STORED_PATH + "_2");
+
+        // Act
+        List<PhotoDto> result = photoService.uploadPhotosWithDates(
+                files, List.of(date1, date2, date3));
+
+        // Assert
+        assertEquals(2, result.size());
+        assertEquals(date2, result.get(0).creationDate());
+        assertEquals(date3, result.get(1).creationDate());
+        verify(fileStorageService, never()).store(emptyFile);
+    }
+
+
 }

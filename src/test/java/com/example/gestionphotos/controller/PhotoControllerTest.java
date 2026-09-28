@@ -524,4 +524,265 @@ class PhotoControllerTest {
                 .andExpect(header().string("Content-Disposition", "attachment; filename=\"photos_" + java.time.LocalDate.now() + ".zip\""));
     }
 
+
+    // ==================== Tests pour POST /upload/single-with-date ====================
+
+    @Test
+    void uploadPhotoWithDate_shouldReturnPhotoDtoOnSuccess() throws Exception {
+        // Arrange
+        LocalDateTime testCreationDate = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                TEST_ORIGINAL_NAME,
+                TEST_MIME_TYPE,
+                "test content".getBytes()
+        );
+        PhotoDto expectedDto = new PhotoDto(
+                TEST_UUID,
+                TEST_ORIGINAL_NAME,
+                TEST_STORED_PATH,
+                TEST_FILE_NAME,
+                TEST_SIZE,
+                TEST_MIME_TYPE,
+                LocalDateTime.now(),
+                testCreationDate
+        );
+        when(photoService.uploadPhotoWithDate(any(), eq(testCreationDate))).thenReturn(expectedDto);
+
+        // Act & Assert
+        mockMvc.perform(multipart("/api/photos/upload/single-with-date")
+                        .file(file)
+                        .param("creationDate", "2023-06-15T10:30:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(TEST_UUID))
+                .andExpect(jsonPath("$.originalName").value(TEST_ORIGINAL_NAME))
+                .andExpect(jsonPath("$.creationDate").value("2023-06-15T10:30:00"));
+    }
+
+    @Test
+    void uploadPhotoWithDate_shouldReturnBadRequestOnInvalidFile() throws Exception {
+        // Arrange
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "",
+                TEST_MIME_TYPE,
+                new byte[0]
+        );
+        when(photoService.uploadPhotoWithDate(any(), any())).thenThrow(new IllegalArgumentException("Fichier invalide"));
+
+        // Act & Assert
+        mockMvc.perform(multipart("/api/photos/upload/single-with-date")
+                        .file(file)
+                        .param("creationDate", "2023-06-15T10:30:00"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void uploadPhotoWithDate_shouldReturnConflictWhenPhotoAlreadyExists() throws Exception {
+        // Arrange
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                TEST_ORIGINAL_NAME,
+                TEST_MIME_TYPE,
+                "test content".getBytes()
+        );
+        when(photoService.uploadPhotoWithDate(any(), any()))
+                .thenThrow(new DuplicatePhotoException("La photo existe déjà"));
+
+        // Act & Assert
+        mockMvc.perform(multipart("/api/photos/upload/single-with-date")
+                        .file(file)
+                        .param("creationDate", "2023-06-15T10:30:00"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("La photo existe déjà"));
+    }
+
+    @Test
+    void uploadPhotoWithDate_shouldReturnBadRequestOnInvalidDateFormat() throws Exception {
+        // Arrange
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                TEST_ORIGINAL_NAME,
+                TEST_MIME_TYPE,
+                "test content".getBytes()
+        );
+
+        // Act & Assert - date format invalide
+        mockMvc.perform(multipart("/api/photos/upload/single-with-date")
+                        .file(file)
+                        .param("creationDate", "invalid-date-format"))
+                .andExpect(status().isBadRequest());
+    }
+
+
+    // ==================== Tests pour POST /upload/multiple-with-date ====================
+
+    @Test
+    void uploadPhotosWithDates_shouldReturnListOfPhotoDtosOnSuccess() throws Exception {
+        // Arrange
+        LocalDateTime date1 = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+        LocalDateTime date2 = LocalDateTime.of(2023, 6, 16, 11, 45, 0);
+
+        MockMultipartFile file1 = new MockMultipartFile(
+                "files",
+                "photo1.jpg",
+                TEST_MIME_TYPE,
+                "test content 1".getBytes()
+        );
+        MockMultipartFile file2 = new MockMultipartFile(
+                "files",
+                "photo2.jpg",
+                TEST_MIME_TYPE,
+                "test content 2".getBytes()
+        );
+
+        PhotoDto dto1 = new PhotoDto(
+                TEST_UUID + "1",
+                "photo1.jpg",
+                TEST_STORED_PATH + "1",
+                TEST_FILE_NAME + "1",
+                TEST_SIZE,
+                TEST_MIME_TYPE,
+                LocalDateTime.now(),
+                date1
+        );
+        PhotoDto dto2 = new PhotoDto(
+                TEST_UUID + "2",
+                "photo2.jpg",
+                TEST_STORED_PATH + "2",
+                TEST_FILE_NAME + "2",
+                TEST_SIZE,
+                TEST_MIME_TYPE,
+                LocalDateTime.now(),
+                date2
+        );
+
+        when(photoService.uploadPhotosWithDates(any(), any())).thenReturn(List.of(dto1, dto2));
+
+        // Act & Assert
+        mockMvc.perform(multipart("/api/photos/upload/multiple-with-date")
+                        .file(file1)
+                        .file(file2)
+                        .param("creationDates", "2023-06-15T10:30:00")
+                        .param("creationDates", "2023-06-16T11:45:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(TEST_UUID + "1"))
+                .andExpect(jsonPath("$[1].id").value(TEST_UUID + "2"))
+                .andExpect(jsonPath("$[0].creationDate").value("2023-06-15T10:30:00"))
+                .andExpect(jsonPath("$[1].creationDate").value("2023-06-16T11:45:00"));
+    }
+
+    @Test
+    void uploadPhotosWithDates_shouldReturnBadRequestWhenCountsDoNotMatch() throws Exception {
+        // Arrange
+        MockMultipartFile file1 = new MockMultipartFile(
+                "files",
+                "photo1.jpg",
+                TEST_MIME_TYPE,
+                "test content 1".getBytes()
+        );
+        MockMultipartFile file2 = new MockMultipartFile(
+                "files",
+                "photo2.jpg",
+                TEST_MIME_TYPE,
+                "test content 2".getBytes()
+        );
+
+        when(photoService.uploadPhotosWithDates(any(), any()))
+                .thenThrow(new IllegalArgumentException("Le nombre de fichiers doit correspondre au nombre de dates de création"));
+
+        // Act & Assert - 2 fichiers mais seulement 1 date
+        mockMvc.perform(multipart("/api/photos/upload/multiple-with-date")
+                        .file(file1)
+                        .file(file2)
+                        .param("creationDates", "2023-06-15T10:30:00"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void uploadPhotosWithDates_shouldReturnBadRequestOnInvalidDateFormat() throws Exception {
+        // Arrange
+        MockMultipartFile file1 = new MockMultipartFile(
+                "files",
+                "photo1.jpg",
+                TEST_MIME_TYPE,
+                "test content 1".getBytes()
+        );
+
+        // Act & Assert - date format invalide
+        mockMvc.perform(multipart("/api/photos/upload/multiple-with-date")
+                        .file(file1)
+                        .param("creationDates", "invalid-date"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Format de date invalide. Utilisez le format ISO: yyyy-MM-dd'T'HH:mm:ss"));
+    }
+
+    @Test
+    void uploadPhotosWithDates_shouldReturnMultiStatusOnPartialSuccess() throws Exception {
+        // Arrange
+        MockMultipartFile file1 = new MockMultipartFile(
+                "files",
+                "photo1.jpg",
+                TEST_MIME_TYPE,
+                "test content 1".getBytes()
+        );
+        MockMultipartFile file2 = new MockMultipartFile(
+                "files",
+                "photo2.jpg",
+                TEST_MIME_TYPE,
+                "test content 2".getBytes()
+        );
+
+        PhotoDto dto1 = new PhotoDto(
+                TEST_UUID + "1",
+                "photo1.jpg",
+                TEST_STORED_PATH + "1",
+                TEST_FILE_NAME + "1",
+                TEST_SIZE,
+                TEST_MIME_TYPE,
+                LocalDateTime.now(),
+                LocalDateTime.of(2023, 6, 15, 10, 30, 0)
+        );
+
+        MultiplePhotoUploadException mockException = new MultiplePhotoUploadException(
+                List.of(dto1),
+                List.of(new DuplicatePhotoException("La photo photo2.jpg existe déjà"))
+        );
+
+        when(photoService.uploadPhotosWithDates(any(), any())).thenThrow(mockException);
+
+        // Act & Assert
+        mockMvc.perform(multipart("/api/photos/upload/multiple-with-date")
+                        .file(file1)
+                        .file(file2)
+                        .param("creationDates", "2023-06-15T10:30:00")
+                        .param("creationDates", "2023-06-16T11:45:00"))
+                .andExpect(status().isMultiStatus())
+                .andExpect(jsonPath("$.uploadedPhotos").isArray())
+                .andExpect(jsonPath("$.errors").isArray())
+                .andExpect(jsonPath("$.errors[0].type").value("DuplicatePhotoException"));
+    }
+
+    @Test
+    void uploadPhotosWithDates_shouldReturnConflictWhenPhotoAlreadyExists() throws Exception {
+        // Arrange
+        MockMultipartFile file = new MockMultipartFile(
+                "files",
+                "photo.jpg",
+                TEST_MIME_TYPE,
+                "test content".getBytes()
+        );
+
+        when(photoService.uploadPhotosWithDates(any(), any()))
+                .thenThrow(new DuplicatePhotoException("La photo existe déjà"));
+
+        // Act & Assert
+        mockMvc.perform(multipart("/api/photos/upload/multiple-with-date")
+                        .file(file)
+                        .param("creationDates", "2023-06-15T10:30:00"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("La photo existe déjà"));
+    }
+
+
 }
