@@ -180,26 +180,43 @@ public class PhotoController {
         logger.debug("Paramètre files : null={}, length={}, creationDates size={}", 
         files == null, files != null ? files.length : 0, creationDates != null ? creationDates.size() : 0);
         
-        if (files != null) {
+        if (files != null && creationDates != null) {
             for(int i = 0; i < files.length; i++) {
                 logger.debug("File {} details - name: {}, size: {}, contentType: {}, creationDate: {}", 
-                i, files[i].getOriginalFilename(), files[i].getSize(), files[i].getContentType(),
-                i < creationDates.size() ? creationDates.get(i) : "N/A");
+                    i,
+                    files[i].getOriginalFilename(), 
+                    files[i].getSize(), 
+                    files[i].getContentType(),
+                    i < creationDates.size() ? creationDates.get(i) : "N/A");
             }
+        } 
+        
+        if(files == null || files.length == 0) {
+            logger.error("Tableau de fichiers vide ou nul.");
+            return ResponseEntity.badRequest()
+            .body(java.util.Map.of("message", "Le tableau de fichiers ne peux pas être vide ou nul."));
+        }
+        
+        if(creationDates == null || creationDates.size() == 0) {
+            logger.error("Liste de dates vide ou nul.");
+            return ResponseEntity.badRequest()
+            .body(java.util.Map.of("message", "La liste de dates ne peux pas être vide ou nul."));
         }
         
         try {
             List<LocalDateTime> parsedDates = creationDates.stream()
-            .map(dateStr -> LocalDateTime.parse(dateStr, java.time.format.DateTimeFormatter.ISO_DATE_TIME))
-            .toList();
+                .map(dateStr -> LocalDateTime.parse(dateStr, java.time.format.DateTimeFormatter.ISO_DATE_TIME))
+                .toList();
             List<PhotoDto> photoDtos = photoService.uploadPhotosWithDates(files, parsedDates);
             logger.info("Photos uploadées avec dates personnalisées, IDs: {}", 
-            photoDtos.stream().map(p -> p.id()).toArray());
+            photoDtos.stream()
+                .map(p -> p.id())
+                .toArray());
             return ResponseEntity.ok(photoDtos);
         } catch (java.time.format.DateTimeParseException e) {
             logger.error("Format de date invalide : {}", e.getMessage());
             return ResponseEntity.badRequest()
-            .body(java.util.Map.of("message", "Format de date invalide. Utilisez le format ISO: yyyy-MM-dd'T'HH:mm:ss"));
+                .body(java.util.Map.of("message", "Format de date invalide. Utilisez le format ISO: yyyy-MM-dd'T'HH:mm:ss"));
         } catch (MultiplePhotoUploadException e) {
             logger.warn("{} erreur(s) pendant l'upload multiple avec dates", e.getErrors().size());
             List<java.util.Map<String, String>> errors = e.getErrors()
@@ -378,8 +395,8 @@ public class PhotoController {
         try {
             // Créer le ZIP avec les photos
             List<String> storedPaths = photos.stream()
-            .map(PhotoDto::storedPath)
-            .collect(Collectors.toList());
+                .map(p -> p.storedPath())
+                .collect(Collectors.toList());
             
             byte[] zipBytes = fileStorageService.createZipFromPaths(storedPaths);
             
