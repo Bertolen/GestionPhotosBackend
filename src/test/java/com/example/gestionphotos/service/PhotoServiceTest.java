@@ -268,6 +268,120 @@ class PhotoServiceTest {
     }
 
 
+    // ==================== Tests pour deletePhotos ====================
+
+    @Test
+    void deletePhotos_shouldDeleteAllPhotos() throws IOException {
+        // Arrange
+        PhotoDto photo1 = new PhotoDto("id1", "name1.jpg", "path1", "file1.jpg", 100L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+        PhotoDto photo2 = new PhotoDto("id2", "name2.jpg", "path2", "file2.jpg", 200L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+
+        PhotoService spyService = spy(photoService);
+        doReturn(photo1).when(spyService).getPhotoById("id1");
+        doReturn(photo2).when(spyService).getPhotoById("id2");
+        doNothing().when(fileStorageService).delete(anyString());
+
+        // Act
+        DeleteResult result = spyService.deletePhotos(List.of("id1", "id2"));
+
+        // Assert
+        assertEquals(2, result.deletedIds().size());
+        assertEquals(0, result.notFoundIds().size());
+        assertTrue(result.deletedIds().contains("id1"));
+        assertTrue(result.deletedIds().contains("id2"));
+        verify(fileStorageService).delete("path1");
+        verify(fileStorageService).delete("path2");
+    }
+
+    @Test
+    void deletePhotos_shouldReturnNotFoundForMissingPhotos() throws IOException {
+        // Arrange
+        PhotoDto photo1 = new PhotoDto("id1", "name1.jpg", "path1", "file1.jpg", 100L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+
+        PhotoService spyService = spy(photoService);
+        doReturn(photo1).when(spyService).getPhotoById("id1");
+        doReturn(null).when(spyService).getPhotoById("id2");
+        doReturn(null).when(spyService).getPhotoById("id3");
+        doNothing().when(fileStorageService).delete(anyString());
+
+        // Act
+        DeleteResult result = spyService.deletePhotos(List.of("id1", "id2", "id3"));
+
+        // Assert
+        assertEquals(1, result.deletedIds().size());
+        assertEquals(2, result.notFoundIds().size());
+        assertTrue(result.deletedIds().contains("id1"));
+        assertTrue(result.notFoundIds().contains("id2"));
+        assertTrue(result.notFoundIds().contains("id3"));
+        verify(fileStorageService).delete("path1");
+        verify(fileStorageService, never()).delete("path2");
+        verify(fileStorageService, never()).delete("path3");
+    }
+
+    @Test
+    void deletePhotos_shouldHandleEmptyList() {
+        // Act
+        DeleteResult result = photoService.deletePhotos(List.of());
+
+        // Assert
+        assertEquals(0, result.deletedIds().size());
+        assertEquals(0, result.notFoundIds().size());
+    }
+
+    @Test
+    void deletePhotos_shouldHandleNullList() {
+        // Act
+        DeleteResult result = photoService.deletePhotos(null);
+
+        // Assert
+        assertEquals(0, result.deletedIds().size());
+        assertEquals(0, result.notFoundIds().size());
+    }
+
+    @Test
+    void deletePhotos_shouldReturnNotFoundForAllMissingPhotos() throws IOException {
+        // Arrange
+        PhotoService spyService = spy(photoService);
+        doReturn(null).when(spyService).getPhotoById(anyString());
+
+        // Act
+        DeleteResult result = spyService.deletePhotos(List.of("id1", "id2"));
+
+        // Assert
+        assertEquals(0, result.deletedIds().size());
+        assertEquals(2, result.notFoundIds().size());
+        assertTrue(result.notFoundIds().contains("id1"));
+        assertTrue(result.notFoundIds().contains("id2"));
+        verify(fileStorageService, never()).delete(anyString());
+    }
+
+    @Test
+    void deletePhotos_shouldHandleDuplicatesInInput() throws IOException {
+        // Arrange
+        PhotoDto photo1 = new PhotoDto("id1", "name1.jpg", "path1", "file1.jpg", 100L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+
+        PhotoService spyService = spy(photoService);
+        doReturn(photo1).when(spyService).getPhotoById("id1");
+        doReturn(null).when(spyService).getPhotoById("id2");
+        doNothing().when(fileStorageService).delete(anyString());
+
+        // Act - passer id1 deux fois
+        DeleteResult result = spyService.deletePhotos(List.of("id1", "id1", "id2"));
+
+        // Assert
+        assertEquals(2, result.deletedIds().size());
+        assertEquals(1, result.notFoundIds().size());
+        assertTrue(result.deletedIds().contains("id1"));
+        assertTrue(result.notFoundIds().contains("id2"));
+        // deletePhoto est appelé 3 fois (une fois par élément dans la liste d'entrée)
+        verify(spyService, times(3)).deletePhoto(anyString());
+    }
+
+
     // ==================== Tests pour getPhotosByDateRange ====================
 
     @Test

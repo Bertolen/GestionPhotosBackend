@@ -28,6 +28,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.example.gestionphotos.dto.PhotoDto;
 import com.example.gestionphotos.exception.DuplicatePhotoException;
 import com.example.gestionphotos.exception.MultiplePhotoUploadException;
+import com.example.gestionphotos.service.DeleteResult;
 import com.example.gestionphotos.service.FileStorageService;
 import com.example.gestionphotos.service.PhotoService;
 
@@ -335,6 +336,42 @@ public class PhotoController {
             return ResponseEntity.ok("Photo supprimée avec succès");
         }
         return ResponseEntity.notFound().build();
+    }
+    
+    /**
+    * Supprime plusieurs photos.
+    * 
+    * @param photoIds liste des IDs des photos à supprimer
+    * @return ResponseEntity avec le résultat de la suppression
+    */
+    @DeleteMapping("/multiple")
+    public ResponseEntity<java.util.Map<String, Object>> deletePhotos(@RequestParam List<String> photoIds) {
+        logger.info("Appel de deletePhotos");
+        logger.debug("Paramètre photoIds : {}", photoIds);
+        
+        // Supprimer les doublons
+        List<String> uniquePhotoIds = photoIds.stream()
+            .distinct()
+            .collect(Collectors.toList());
+        
+        logger.debug("Identifiants uniques : {}", uniquePhotoIds);
+        
+        DeleteResult result = photoService.deletePhotos(uniquePhotoIds);
+        
+        java.util.Map<String, Object> response = java.util.Map.of(
+            "deletedCount", result.deletedIds().size(),
+            "deletedIds", result.deletedIds(),
+            "notFoundCount", result.notFoundIds().size(),
+            "notFoundIds", result.notFoundIds()
+        );
+        
+        // Retourner 207 Multi-Status si certaines photos n'ont pas été trouvées
+        if (!result.notFoundIds().isEmpty()) {
+            logger.warn("{} photo(s) non trouvée(s) pendant la suppression multiple", result.notFoundIds().size());
+            return ResponseEntity.status(HttpStatus.MULTI_STATUS).body(response);
+        }
+        
+        return ResponseEntity.ok(response);
     }
     
     /**

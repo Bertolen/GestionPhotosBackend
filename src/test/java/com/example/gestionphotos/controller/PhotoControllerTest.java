@@ -28,6 +28,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 
 import com.example.gestionphotos.dto.PhotoDto;
+import com.example.gestionphotos.service.DeleteResult;
 import com.example.gestionphotos.service.FileStorageService;
 import com.example.gestionphotos.exception.DuplicatePhotoException;
 import com.example.gestionphotos.exception.MultiplePhotoUploadException;
@@ -352,6 +353,95 @@ class PhotoControllerTest {
         // Act & Assert
         mockMvc.perform(delete("/api/photos/{id}", TEST_UUID))
                 .andExpect(status().isNotFound());
+    }
+
+
+    // ==================== Tests pour DELETE /multiple ====================
+
+    @Test
+    void deletePhotos_shouldReturnSuccessWhenAllDeleted() throws Exception {
+        // Arrange
+        when(photoService.deletePhotos(anyList())).thenReturn(
+                new DeleteResult(List.of("id1", "id2"), List.of()));
+
+        // Act & Assert
+        mockMvc.perform(delete("/api/photos/multiple")
+                        .param("photoIds", "id1")
+                        .param("photoIds", "id2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deletedCount").value(2))
+                .andExpect(jsonPath("$.notFoundCount").value(0))
+                .andExpect(jsonPath("$.deletedIds").isArray())
+                .andExpect(jsonPath("$.deletedIds.length()").value(2))
+                .andExpect(jsonPath("$.notFoundIds").isArray())
+                .andExpect(jsonPath("$.notFoundIds.length()").value(0));
+    }
+
+    @Test
+    void deletePhotos_shouldReturnMultiStatusWhenSomeNotFound() throws Exception {
+        // Arrange
+        when(photoService.deletePhotos(anyList())).thenReturn(
+                new DeleteResult(List.of("id1"), List.of("id2", "id3")));
+
+        // Act & Assert
+        mockMvc.perform(delete("/api/photos/multiple")
+                        .param("photoIds", "id1")
+                        .param("photoIds", "id2")
+                        .param("photoIds", "id3"))
+                .andExpect(status().isMultiStatus())
+                .andExpect(jsonPath("$.deletedCount").value(1))
+                .andExpect(jsonPath("$.notFoundCount").value(2))
+                .andExpect(jsonPath("$.deletedIds").isArray())
+                .andExpect(jsonPath("$.deletedIds.length()").value(1))
+                .andExpect(jsonPath("$.notFoundIds").isArray())
+                .andExpect(jsonPath("$.notFoundIds.length()").value(2));
+    }
+
+    @Test
+    void deletePhotos_shouldRemoveDuplicates() throws Exception {
+        // Arrange
+        when(photoService.deletePhotos(anyList())).thenReturn(
+                new DeleteResult(List.of("id1", "id2"), List.of()));
+
+        // Act & Assert - passer id1 deux fois
+        mockMvc.perform(delete("/api/photos/multiple")
+                        .param("photoIds", "id1")
+                        .param("photoIds", "id1")
+                        .param("photoIds", "id2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deletedCount").value(2));
+
+        // Vérifier que deletePhotos a été appelé avec seulement 2 IDs uniques
+        verify(photoService).deletePhotos(List.of("id1", "id2"));
+    }
+
+    @Test
+    void deletePhotos_shouldReturnSuccessWithEmptyList() throws Exception {
+        // Arrange
+        when(photoService.deletePhotos(anyList())).thenReturn(
+                new DeleteResult(List.of(), List.of()));
+
+        // Act & Assert
+        mockMvc.perform(delete("/api/photos/multiple")
+                        .param("photoIds", "id1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deletedCount").value(0))
+                .andExpect(jsonPath("$.notFoundCount").value(0));
+    }
+
+    @Test
+    void deletePhotos_shouldReturnSuccessWhenAllNotFound() throws Exception {
+        // Arrange - toutes les photos non trouvées
+        when(photoService.deletePhotos(anyList())).thenReturn(
+                new DeleteResult(List.of(), List.of("id1", "id2")));
+
+        // Act & Assert
+        mockMvc.perform(delete("/api/photos/multiple")
+                        .param("photoIds", "id1")
+                        .param("photoIds", "id2"))
+                .andExpect(status().isMultiStatus())
+                .andExpect(jsonPath("$.deletedCount").value(0))
+                .andExpect(jsonPath("$.notFoundCount").value(2));
     }
 
 

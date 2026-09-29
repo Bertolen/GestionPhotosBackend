@@ -231,6 +231,32 @@ public class PhotoService {
     }
 
     /**
+     * Supprime plusieurs photos par leurs IDs.
+     * 
+     * @param photoIds liste des IDs des photos a supprimer
+     * @return Resultat de la suppression avec les IDs supprimés et ceux non trouvés
+     */
+    public DeleteResult deletePhotos(List<String> photoIds) {
+        if (photoIds == null || photoIds.isEmpty()) {
+            return new DeleteResult(List.of(), List.of());
+        }
+        
+        List<String> deletedIds = new ArrayList<>();
+        List<String> notFoundIds = new ArrayList<>();
+        
+        for (String photoId : photoIds) {
+            boolean deleted = deletePhoto(photoId);
+            if (deleted) {
+                deletedIds.add(photoId);
+            } else {
+                notFoundIds.add(photoId);
+            }
+        }
+        
+        return new DeleteResult(deletedIds, notFoundIds);
+    }
+
+    /**
      * Extrait l'UUID de 8 caracteres du nom de fichier.
      * Format attendu : YYYYMMDD_HHmmss_[UUID8].ext
      * 
