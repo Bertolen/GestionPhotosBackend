@@ -27,7 +27,7 @@ public class PhotoService {
     private final FileStorageService fileStorageService;
     
     // Taille maximale des fichiers (en octets) - configurable
-    @Value("${app.upload.max-file-size:10485760}") // 10 Mo par defaut
+    @Value("${app.upload.max-file-size:1073741824}") // 1 Go par defaut
     private long maxFileSize;
     
     // Types MIME autorises

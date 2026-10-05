@@ -102,8 +102,8 @@ server.port=8080
 # Chemin de stockage des photos
 app.storage.path=./photos-storage
 
-# Taille maximale des uploads (10 Mo)
-app.upload.max-file-size=10485760
+# Taille maximale des uploads (1 Go)
+app.upload.max-file-size=1073741824
 
 # Types MIME autorisés
 app.upload.allowed-mime-types=image/jpeg,image/png,image/gif,image/webp,image/jpg

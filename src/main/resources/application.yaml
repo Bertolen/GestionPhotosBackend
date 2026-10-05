@@ -5,7 +5,7 @@ app:
   storage:
     path: ./photos-storage
   upload:
-    max-file-size: 10485760
+    max-file-size: 1073741824
     allowed-mime-types: image/jpeg,image/png,image/gif,image/webp,image/jpg
 
 spring:
@@ -19,8 +19,8 @@ spring:
       allow-credentials: true
   servlet:
     multipart:
-      max-file-size: 10MB
-      max-request-size: 10MB
+      max-file-size: 1GB
+      max-request-size: 1GB
 
 logging:
   level:
