@@ -60,6 +60,7 @@ class PhotoControllerTest {
     private PhotoDto testPhotoDto;
 
     @BeforeEach
+    @SuppressWarnings("unused")
     void setUp() {
         photoController = new PhotoController(photoService, fileStorageService);
         photoController.setMaxFilesPerUpload(10);

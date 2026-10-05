@@ -2,7 +2,9 @@
 
 # Fichiers Maven
 .tmp/
-target/
+*.jar
+target/*
+!target/*.jar
 pom.xml.versionsBackup
 
 # IDE
@@ -32,7 +34,6 @@ Dockerfile
 
 # Java
 *.class
-*.jar
 
 # OS
 .DS_Store
