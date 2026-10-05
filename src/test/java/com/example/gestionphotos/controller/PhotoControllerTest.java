@@ -1,18 +1,5 @@
 package com.example.gestionphotos.controller;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -21,23 +8,35 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import org.mockito.Mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import com.example.gestionphotos.dto.PhotoDto;
-import com.example.gestionphotos.service.DeleteResult;
-import com.example.gestionphotos.service.FileStorageService;
 import com.example.gestionphotos.exception.DuplicatePhotoException;
 import com.example.gestionphotos.exception.MultiplePhotoUploadException;
+import com.example.gestionphotos.service.DeleteResult;
+import com.example.gestionphotos.service.FileStorageService;
 import com.example.gestionphotos.service.PhotoService;
 
 /**
- * Tests unitaires pour PhotoController.
- * Utilise MockMvc configuré manuellement avec Mockito.
+ * Tests unitaires pour PhotoController. Utilise MockMvc configuré manuellement
+ * avec Mockito.
  */
 @ExtendWith(MockitoExtension.class)
 class PhotoControllerTest {
@@ -78,9 +77,7 @@ class PhotoControllerTest {
         );
     }
 
-
     // ==================== Tests pour POST /upload ====================
-
     @Test
     void uploadPhoto_shouldReturnPhotoDtoOnSuccess() throws Exception {
         // Arrange
@@ -94,7 +91,7 @@ class PhotoControllerTest {
 
         // Act & Assert
         mockMvc.perform(multipart("/api/photos/upload")
-                        .file(file))
+                .file(file))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(TEST_UUID))
                 .andExpect(jsonPath("$.originalName").value(TEST_ORIGINAL_NAME))
@@ -114,7 +111,7 @@ class PhotoControllerTest {
 
         // Act & Assert
         mockMvc.perform(multipart("/api/photos/upload")
-                        .file(file))
+                .file(file))
                 .andExpect(status().isBadRequest());
     }
 
@@ -132,7 +129,7 @@ class PhotoControllerTest {
 
         // Act & Assert
         mockMvc.perform(multipart("/api/photos/upload")
-                        .file(file))
+                .file(file))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("La photo existe déjà"));
     }
@@ -150,13 +147,11 @@ class PhotoControllerTest {
 
         // Act & Assert
         mockMvc.perform(multipart("/api/photos/upload")
-                        .file(file))
+                .file(file))
                 .andExpect(status().isInternalServerError());
     }
 
-
     // ==================== Tests pour POST /upload/multiple ====================
-
     @Test
     void uploadPhotos_shouldReturnListOfPhotoDtos() throws Exception {
         // Arrange
@@ -172,7 +167,7 @@ class PhotoControllerTest {
                 TEST_MIME_TYPE,
                 "test content 2".getBytes()
         );
-        
+
         PhotoDto photo1 = testPhotoDto;
         PhotoDto photo2 = new PhotoDto(
                 "cd789012",
@@ -184,13 +179,13 @@ class PhotoControllerTest {
                 LocalDateTime.now(),
                 LocalDateTime.now()
         );
-        
+
         when(photoService.uploadPhotos(any())).thenReturn(List.of(photo1, photo2));
 
         // Act & Assert
         mockMvc.perform(multipart("/api/photos/upload/multiple")
-                        .file(file1)
-                        .file(file2))
+                .file(file1)
+                .file(file2))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].id").value(TEST_UUID))
@@ -210,7 +205,7 @@ class PhotoControllerTest {
 
         // Act & Assert
         mockMvc.perform(multipart("/api/photos/upload/multiple")
-                        .file(file))
+                .file(file))
                 .andExpect(status().isBadRequest());
     }
 
@@ -250,16 +245,14 @@ class PhotoControllerTest {
 
         // Act & Assert
         mockMvc.perform(multipart("/api/photos/upload/multiple")
-                        .file(file))
+                .file(file))
                 .andExpect(status().isMultiStatus())
                 .andExpect(jsonPath("$.uploadedPhotos.length()").value(1))
                 .andExpect(jsonPath("$.errors.length()").value(1))
                 .andExpect(jsonPath("$.errors[0].message").value("La photo existe déjà"));
     }
 
-
     // ==================== Tests pour GET / (getAllPhotos) ====================
-
     @Test
     void getAllPhotos_shouldReturnListOfPhotos() throws Exception {
         // Arrange
@@ -283,9 +276,7 @@ class PhotoControllerTest {
                 .andExpect(jsonPath("$.length()").value(0));
     }
 
-
     // ==================== Tests pour GET /{id} ====================
-
     @Test
     void getPhotoById_shouldReturnPhotoWhenFound() throws Exception {
         // Arrange
@@ -307,9 +298,7 @@ class PhotoControllerTest {
                 .andExpect(status().isNotFound());
     }
 
-
     // ==================== Tests pour GET /by-date ====================
-
     @Test
     void getPhotosByDateRange_shouldReturnFilteredList() throws Exception {
         // Arrange
@@ -320,15 +309,13 @@ class PhotoControllerTest {
 
         // Act & Assert
         mockMvc.perform(get("/api/photos/by-date")
-                        .param("fromDate", "2024-01-01T00:00:00")
-                        .param("toDate", "2024-12-31T23:59:00"))
+                .param("fromDate", "2024-01-01T00:00:00")
+                .param("toDate", "2024-12-31T23:59:00"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1));
     }
 
-
     // ==================== Tests pour GET /{id}/download ====================
-
     @Test
     void downloadPhoto_shouldReturnNotFoundWhenPhotoNotFound() throws Exception {
         // Arrange
@@ -354,9 +341,7 @@ class PhotoControllerTest {
         verify(fileStorageService).load(TEST_STORED_PATH);
     }
 
-
     // ==================== Tests pour DELETE /{id} ====================
-
     @Test
     void deletePhoto_shouldReturnSuccessWhenDeleted() throws Exception {
         // Arrange
@@ -378,9 +363,7 @@ class PhotoControllerTest {
                 .andExpect(status().isNotFound());
     }
 
-
     // ==================== Tests pour DELETE /multiple ====================
-
     @Test
     void deletePhotos_shouldReturnSuccessWhenAllDeleted() throws Exception {
         // Arrange
@@ -389,8 +372,8 @@ class PhotoControllerTest {
 
         // Act & Assert
         mockMvc.perform(delete("/api/photos/multiple")
-                        .param("photoIds", "id1")
-                        .param("photoIds", "id2"))
+                .param("photoIds", "id1")
+                .param("photoIds", "id2"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.deletedCount").value(2))
                 .andExpect(jsonPath("$.notFoundCount").value(0))
@@ -408,9 +391,9 @@ class PhotoControllerTest {
 
         // Act & Assert
         mockMvc.perform(delete("/api/photos/multiple")
-                        .param("photoIds", "id1")
-                        .param("photoIds", "id2")
-                        .param("photoIds", "id3"))
+                .param("photoIds", "id1")
+                .param("photoIds", "id2")
+                .param("photoIds", "id3"))
                 .andExpect(status().isMultiStatus())
                 .andExpect(jsonPath("$.deletedCount").value(1))
                 .andExpect(jsonPath("$.notFoundCount").value(2))
@@ -428,9 +411,9 @@ class PhotoControllerTest {
 
         // Act & Assert - passer id1 deux fois
         mockMvc.perform(delete("/api/photos/multiple")
-                        .param("photoIds", "id1")
-                        .param("photoIds", "id1")
-                        .param("photoIds", "id2"))
+                .param("photoIds", "id1")
+                .param("photoIds", "id1")
+                .param("photoIds", "id2"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.deletedCount").value(2));
 
@@ -446,7 +429,7 @@ class PhotoControllerTest {
 
         // Act & Assert
         mockMvc.perform(delete("/api/photos/multiple")
-                        .param("photoIds", "id1"))
+                .param("photoIds", "id1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.deletedCount").value(0))
                 .andExpect(jsonPath("$.notFoundCount").value(0));
@@ -460,16 +443,14 @@ class PhotoControllerTest {
 
         // Act & Assert
         mockMvc.perform(delete("/api/photos/multiple")
-                        .param("photoIds", "id1")
-                        .param("photoIds", "id2"))
+                .param("photoIds", "id1")
+                .param("photoIds", "id2"))
                 .andExpect(status().isMultiStatus())
                 .andExpect(jsonPath("$.deletedCount").value(0))
                 .andExpect(jsonPath("$.notFoundCount").value(2));
     }
 
-
     // ==================== Tests pour GET /{id}/metadata ====================
-
     @Test
     void getPhotoMetadata_shouldReturnMetadataWhenFound() throws Exception {
         // Arrange
@@ -492,9 +473,7 @@ class PhotoControllerTest {
                 .andExpect(status().isNotFound());
     }
 
-
     // ==================== Tests pour GET /status ====================
-
     @Test
     void status_shouldReturnOk() throws Exception {
         // Act & Assert
@@ -503,9 +482,7 @@ class PhotoControllerTest {
                 .andExpect(content().string("Service Photo est opérationnel"));
     }
 
-
     // ==================== Tests pour POST /download/bulk ====================
-
     @Test
     void downloadPhotosBulk_shouldReturnZipWithPhotos() throws Exception {
         // Arrange
@@ -529,18 +506,18 @@ class PhotoControllerTest {
                 LocalDateTime.now(),
                 LocalDateTime.now()
         );
-        
+
         when(photoService.getPhotosByIds(anyList())).thenReturn(List.of(photo1, photo2));
         when(fileStorageService.createZipFromPaths(anyList())).thenReturn(new byte[]{'Z', 'I', 'P'});
 
         // Act & Assert
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .post("/api/photos/download/bulk")
-                        .param("photoIds", "id1")
-                        .param("photoIds", "id2"))
+                .post("/api/photos/download/bulk")
+                .param("photoIds", "id1")
+                .param("photoIds", "id2"))
                 .andExpect(status().isOk())
                 .andExpect(content().bytes(new byte[]{'Z', 'I', 'P'}));
-        
+
         // Vérifier que le service a été appelé avec les bons IDs
         verify(photoService).getPhotosByIds(List.of("id1", "id2"));
     }
@@ -558,19 +535,19 @@ class PhotoControllerTest {
                 LocalDateTime.now(),
                 LocalDateTime.now()
         );
-        
+
         when(photoService.getPhotosByIds(anyList())).thenReturn(List.of(photo1));
         when(fileStorageService.createZipFromPaths(anyList())).thenReturn(new byte[]{'Z', 'I', 'P'});
 
         // Act & Assert - passer id1 deux fois
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .post("/api/photos/download/bulk")
-                        .param("photoIds", "id1")
-                        .param("photoIds", "id1")
-                        .param("photoIds", "id2"))
+                .post("/api/photos/download/bulk")
+                .param("photoIds", "id1")
+                .param("photoIds", "id1")
+                .param("photoIds", "id2"))
                 .andExpect(status().isOk())
                 .andExpect(content().bytes(new byte[]{'Z', 'I', 'P'}));
-        
+
         // Vérifier que getPhotosByIds a été appelé avec seulement 2 IDs uniques
         verify(photoService).getPhotosByIds(List.of("id1", "id2"));
     }
@@ -582,8 +559,8 @@ class PhotoControllerTest {
 
         // Act & Assert
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .post("/api/photos/download/bulk")
-                        .param("photoIds", "non-existent-id"))
+                .post("/api/photos/download/bulk")
+                .param("photoIds", "non-existent-id"))
                 .andExpect(status().isNotFound());
     }
 
@@ -600,14 +577,14 @@ class PhotoControllerTest {
                 LocalDateTime.now(),
                 LocalDateTime.now()
         );
-        
+
         when(photoService.getPhotosByIds(anyList())).thenReturn(List.of(photo1));
         when(fileStorageService.createZipFromPaths(anyList())).thenThrow(new IOException("Erreur ZIP"));
 
         // Act & Assert
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .post("/api/photos/download/bulk")
-                        .param("photoIds", "id1"))
+                .post("/api/photos/download/bulk")
+                .param("photoIds", "id1"))
                 .andExpect(status().isInternalServerError());
     }
 
@@ -624,22 +601,20 @@ class PhotoControllerTest {
                 LocalDateTime.now(),
                 LocalDateTime.now()
         );
-        
+
         when(photoService.getPhotosByIds(anyList())).thenReturn(List.of(photo1));
         when(fileStorageService.createZipFromPaths(anyList())).thenReturn(new byte[]{'Z', 'I', 'P'});
 
         // Act & Assert
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .post("/api/photos/download/bulk")
-                        .param("photoIds", "id1"))
+                .post("/api/photos/download/bulk")
+                .param("photoIds", "id1"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Type", "application/octet-stream"))
                 .andExpect(header().string("Content-Disposition", "attachment; filename=\"photos_" + java.time.LocalDate.now() + ".zip\""));
     }
 
-
     // ==================== Tests pour POST /upload/single-with-date ====================
-
     @Test
     void uploadPhotoWithDate_shouldReturnPhotoDtoOnSuccess() throws Exception {
         // Arrange
@@ -664,8 +639,8 @@ class PhotoControllerTest {
 
         // Act & Assert
         mockMvc.perform(multipart("/api/photos/upload/single-with-date")
-                        .file(file)
-                        .param("creationDate", "2023-06-15T10:30:00"))
+                .file(file)
+                .param("creationDate", "2023-06-15T10:30:00"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(TEST_UUID))
                 .andExpect(jsonPath("$.originalName").value(TEST_ORIGINAL_NAME))
@@ -685,8 +660,8 @@ class PhotoControllerTest {
 
         // Act & Assert
         mockMvc.perform(multipart("/api/photos/upload/single-with-date")
-                        .file(file)
-                        .param("creationDate", "2023-06-15T10:30:00"))
+                .file(file)
+                .param("creationDate", "2023-06-15T10:30:00"))
                 .andExpect(status().isBadRequest());
     }
 
@@ -704,8 +679,8 @@ class PhotoControllerTest {
 
         // Act & Assert
         mockMvc.perform(multipart("/api/photos/upload/single-with-date")
-                        .file(file)
-                        .param("creationDate", "2023-06-15T10:30:00"))
+                .file(file)
+                .param("creationDate", "2023-06-15T10:30:00"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("La photo existe déjà"));
     }
@@ -722,14 +697,12 @@ class PhotoControllerTest {
 
         // Act & Assert - date format invalide
         mockMvc.perform(multipart("/api/photos/upload/single-with-date")
-                        .file(file)
-                        .param("creationDate", "invalid-date-format"))
+                .file(file)
+                .param("creationDate", "invalid-date-format"))
                 .andExpect(status().isBadRequest());
     }
 
-
     // ==================== Tests pour POST /upload/multiple-with-date ====================
-
     @Test
     void uploadPhotosWithDates_shouldReturnListOfPhotoDtosOnSuccess() throws Exception {
         // Arrange
@@ -774,10 +747,10 @@ class PhotoControllerTest {
 
         // Act & Assert
         mockMvc.perform(multipart("/api/photos/upload/multiple-with-date")
-                        .file(file1)
-                        .file(file2)
-                        .param("creationDates", "2023-06-15T10:30:00")
-                        .param("creationDates", "2023-06-16T11:45:00"))
+                .file(file1)
+                .file(file2)
+                .param("creationDates", "2023-06-15T10:30:00")
+                .param("creationDates", "2023-06-16T11:45:00"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(TEST_UUID + "1"))
                 .andExpect(jsonPath("$[1].id").value(TEST_UUID + "2"))
@@ -806,9 +779,9 @@ class PhotoControllerTest {
 
         // Act & Assert - 2 fichiers mais seulement 1 date
         mockMvc.perform(multipart("/api/photos/upload/multiple-with-date")
-                        .file(file1)
-                        .file(file2)
-                        .param("creationDates", "2023-06-15T10:30:00"))
+                .file(file1)
+                .file(file2)
+                .param("creationDates", "2023-06-15T10:30:00"))
                 .andExpect(status().isBadRequest());
     }
 
@@ -824,8 +797,8 @@ class PhotoControllerTest {
 
         // Act & Assert - date format invalide
         mockMvc.perform(multipart("/api/photos/upload/multiple-with-date")
-                        .file(file1)
-                        .param("creationDates", "invalid-date"))
+                .file(file1)
+                .param("creationDates", "invalid-date"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Format de date invalide. Utilisez le format ISO: yyyy-MM-dd'T'HH:mm:ss"));
     }
@@ -866,10 +839,10 @@ class PhotoControllerTest {
 
         // Act & Assert
         mockMvc.perform(multipart("/api/photos/upload/multiple-with-date")
-                        .file(file1)
-                        .file(file2)
-                        .param("creationDates", "2023-06-15T10:30:00")
-                        .param("creationDates", "2023-06-16T11:45:00"))
+                .file(file1)
+                .file(file2)
+                .param("creationDates", "2023-06-15T10:30:00")
+                .param("creationDates", "2023-06-16T11:45:00"))
                 .andExpect(status().isMultiStatus())
                 .andExpect(jsonPath("$.uploadedPhotos").isArray())
                 .andExpect(jsonPath("$.errors").isArray())
@@ -891,11 +864,10 @@ class PhotoControllerTest {
 
         // Act & Assert
         mockMvc.perform(multipart("/api/photos/upload/multiple-with-date")
-                        .file(file)
-                        .param("creationDates", "2023-06-15T10:30:00"))
+                .file(file)
+                .param("creationDates", "2023-06-15T10:30:00"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("La photo existe déjà"));
     }
-
 
 }

@@ -34,47 +34,47 @@ import com.example.gestionphotos.service.FileStorageService;
 import com.example.gestionphotos.service.PhotoService;
 
 /**
-* Controller REST pour la gestion des photos.
-* Expose les endpoints pour l'upload, le téléchargement, la liste et la suppression des photos.
-*/
+ * Controller REST pour la gestion des photos. Expose les endpoints pour
+ * l'upload, le téléchargement, la liste et la suppression des photos.
+ */
 @RestController
 @RequestMapping("/api/photos")
 public class PhotoController {
-    
+
     private static final Logger logger = LoggerFactory.getLogger(PhotoController.class);
-    
+
     @Value("${app.upload.max-files-per-upload:10}")
     private int maxFilesPerUpload;
-    
+
     private final PhotoService photoService;
     private final FileStorageService fileStorageService;
-    
+
     public void setMaxFilesPerUpload(int maxFilesPerUpload) {
         this.maxFilesPerUpload = maxFilesPerUpload;
     }
-    
+
     @Autowired
     public PhotoController(PhotoService photoService, FileStorageService fileStorageService) {
         this.photoService = photoService;
         this.fileStorageService = fileStorageService;
         logger.info("PhotoController initialisé");
     }
-    
+
     /**
-    * Upload une photo.
-    * 
-    * @param file le fichier à uploader
-    * @return ResponseEntity avec le PhotoDto de la photo sauvegardée
-    */
+     * Upload une photo.
+     *
+     * @param file le fichier à uploader
+     * @return ResponseEntity avec le PhotoDto de la photo sauvegardée
+     */
     @PostMapping("/upload")
     public ResponseEntity<?> uploadPhoto(@RequestParam("file") MultipartFile file) {
         logger.info("Appel de uploadPhoto");
         logger.debug("Paramètre file : null={}, empty={}", file == null, file != null && file.isEmpty());
         if (file != null) {
-            logger.debug("File details - name: {}, size: {}, contentType: {}", 
-            file.getOriginalFilename(), file.getSize(), file.getContentType());
+            logger.debug("File details - name: {}, size: {}, contentType: {}",
+                    file.getOriginalFilename(), file.getSize(), file.getContentType());
         }
-        
+
         try {
             PhotoDto photoDto = photoService.uploadPhoto(file);
             logger.info("Photo uploadée avec succès, ID: {}", photoDto.id());
@@ -85,40 +85,39 @@ public class PhotoController {
         } catch (DuplicatePhotoException e) {
             logger.info("Photo ignorée car déjà présente : {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.CONFLICT)
-            .body(java.util.Map.of("message", e.getMessage()));
+                    .body(java.util.Map.of("message", e.getMessage()));
         } catch (IOException e) {
             logger.error("Erreur IO : {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
-    
+
     /**
-    * Upload plusieurs photos.
-    * 
-    * @param files les fichiers à uploader
-    * @return ResponseEntity avec la liste des PhotoDto sauvegardées
-    */
+     * Upload plusieurs photos.
+     *
+     * @param files les fichiers à uploader
+     * @return ResponseEntity avec la liste des PhotoDto sauvegardées
+     */
     @PostMapping("/upload/multiple")
     public ResponseEntity<?> uploadPhotos(@RequestParam("files") MultipartFile[] files) {
         logger.info("Appel de uploadPhotos");
         logger.debug("Paramètre files : null={}, length={}", files == null, files != null ? files.length : 0);
-        
+
         if (files == null || files.length == 0) {
             return ResponseEntity.badRequest()
-                .body(java.util.Map.of("message", "Au moins un fichier doit être fourni"));
+                    .body(java.util.Map.of("message", "Au moins un fichier doit être fourni"));
         }
-        
+
         if (files.length > maxFilesPerUpload) {
             return ResponseEntity.badRequest()
-                .body(java.util.Map.of("message", "Nombre maximum de fichiers dépassé. Limite: " + maxFilesPerUpload + " fichiers"));
+                    .body(java.util.Map.of("message", "Nombre maximum de fichiers dépassé. Limite: " + maxFilesPerUpload + " fichiers"));
         }
-        
-        if (files != null) {
-            for(MultipartFile f : files){
-                logger.debug("File details - name: {}, size: {}, contentType: {}", 
-                f.getOriginalFilename(), f.getSize(), f.getContentType());
-            }
+
+        for (MultipartFile f : files) {
+            logger.debug("File details - name: {}, size: {}, contentType: {}",
+                    f.getOriginalFilename(), f.getSize(), f.getContentType());
         }
+
         try {
             List<PhotoDto> photoDtos = photoService.uploadPhotos(files);
             logger.info("Photos uploadée avec succès, ID: {}", photoDtos.stream().map(p -> p.id()).toArray());
@@ -126,48 +125,49 @@ public class PhotoController {
         } catch (MultiplePhotoUploadException e) {
             logger.warn("{} erreur(s) pendant l'upload multiple", e.getErrors().size());
             List<java.util.Map<String, String>> errors = e.getErrors()
-                .stream()
-                .map(error -> java.util.Map.of(
-                    "type", error.getClass().getSimpleName(),
-                    "message", error.getMessage() != null ? error.getMessage() : "Erreur inconnue"))
-                .toList();
+                    .stream()
+                    .map(error -> java.util.Map.of(
+                            "type", error.getClass().getSimpleName(),
+                            "message", error.getMessage() != null ? error.getMessage() : "Erreur inconnue"))
+                    .toList();
             return ResponseEntity.status(HttpStatus.MULTI_STATUS)
-                .body(java.util.Map.of(
-                    "uploadedPhotos", e.getUploadedPhotos(),
-                    "errors", errors));
+                    .body(java.util.Map.of(
+                            "uploadedPhotos", e.getUploadedPhotos(),
+                            "errors", errors));
         } catch (IllegalArgumentException e) {
             logger.error("Erreur de validation : {}", e.getMessage());
             return ResponseEntity.badRequest().body(null);
         } catch (DuplicatePhotoException e) {
             logger.info("Photo ignorée car déjà présente : {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.CONFLICT)
-            .body(java.util.Map.of("message", e.getMessage()));
+                    .body(java.util.Map.of("message", e.getMessage()));
         } catch (IOException e) {
             logger.error("Erreur IO : {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
-            
+
     /**
-    * Upload une photo avec une date de création spécifiée.
-    * 
-    * @param file le fichier à uploader
-    * @param creationDate la date de création de la photo (format: yyyy-MM-dd'T'HH:mm:ss)
-    * @return ResponseEntity avec le PhotoDto de la photo sauvegardée
-    */
+     * Upload une photo avec une date de création spécifiée.
+     *
+     * @param file le fichier à uploader
+     * @param creationDate la date de création de la photo (format:
+     * yyyy-MM-dd'T'HH:mm:ss)
+     * @return ResponseEntity avec le PhotoDto de la photo sauvegardée
+     */
     @PostMapping("/upload/single-with-date")
     public ResponseEntity<?> uploadPhotoWithDate(
-        @RequestParam("file") MultipartFile file,
-        @RequestParam("creationDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime creationDate) {
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("creationDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime creationDate) {
         logger.info("Appel de uploadPhotoWithDate");
-        logger.debug("Paramètre file : null={}, empty={}, creationDate={}", 
-        file == null, file != null && file.isEmpty(), creationDate);
-        
+        logger.debug("Paramètre file : null={}, empty={}, creationDate={}",
+                file == null, file != null && file.isEmpty(), creationDate);
+
         if (file != null) {
-            logger.debug("File details - name: {}, size: {}, contentType: {}", 
-            file.getOriginalFilename(), file.getSize(), file.getContentType());
+            logger.debug("File details - name: {}, size: {}, contentType: {}",
+                    file.getOriginalFilename(), file.getSize(), file.getContentType());
         }
-        
+
         try {
             PhotoDto photoDto = photoService.uploadPhotoWithDate(file, creationDate);
             logger.info("Photo uploadée avec date personnalisée, ID: {}, creationDate: {}", photoDto.id(), creationDate);
@@ -178,114 +178,114 @@ public class PhotoController {
         } catch (DuplicatePhotoException e) {
             logger.info("Photo ignorée car déjà présente : {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.CONFLICT)
-            .body(java.util.Map.of("message", e.getMessage()));
+                    .body(java.util.Map.of("message", e.getMessage()));
         } catch (IOException e) {
             logger.error("Erreur IO : {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
-                
+
     /**
-    * Upload plusieurs photos avec leurs dates de création spécifiées.
-    * 
-    * @param files les fichiers à uploader
-    * @param creationDates liste des dates de création pour chaque fichier (format: yyyy-MM-dd'T'HH:mm:ss)
-    * @return ResponseEntity avec la liste des PhotoDto sauvegardées
-    */
+     * Upload plusieurs photos avec leurs dates de création spécifiées.
+     *
+     * @param files les fichiers à uploader
+     * @param creationDates liste des dates de création pour chaque fichier
+     * (format: yyyy-MM-dd'T'HH:mm:ss)
+     * @return ResponseEntity avec la liste des PhotoDto sauvegardées
+     */
     @PostMapping("/upload/multiple-with-date")
     public ResponseEntity<?> uploadPhotosWithDates(
-        @RequestParam("files") MultipartFile[] files,
-        @RequestParam("creationDates") List<String> creationDates) {
+            @RequestParam("files") MultipartFile[] files,
+            @RequestParam("creationDates") List<String> creationDates) {
         logger.info("Appel de uploadPhotosWithDates");
-        logger.debug("Paramètre files : null={}, length={}, creationDates size={}", 
-        files == null, files != null ? files.length : 0, creationDates != null ? creationDates.size() : 0);
-        
+        logger.debug("Paramètre files : null={}, length={}, creationDates size={}",
+                files == null, files != null ? files.length : 0, creationDates != null ? creationDates.size() : 0);
+
         if (files != null && creationDates != null) {
-            for(int i = 0; i < files.length; i++) {
-                logger.debug("File {} details - name: {}, size: {}, contentType: {}, creationDate: {}", 
-                    i,
-                    files[i].getOriginalFilename(), 
-                    files[i].getSize(), 
-                    files[i].getContentType(),
-                    i < creationDates.size() ? creationDates.get(i) : "N/A");
+            for (int i = 0; i < files.length; i++) {
+                logger.debug("File {} details - name: {}, size: {}, contentType: {}, creationDate: {}",
+                        i,
+                        files[i].getOriginalFilename(),
+                        files[i].getSize(),
+                        files[i].getContentType(),
+                        i < creationDates.size() ? creationDates.get(i) : "N/A");
             }
-        } 
-        
-        if(files == null || files.length == 0) {
+        }
+
+        if (files == null || files.length == 0) {
             logger.error("Tableau de fichiers vide ou nul.");
             return ResponseEntity.badRequest()
-            .body(java.util.Map.of("message", "Le tableau de fichiers ne peux pas être vide ou nul."));
+                    .body(java.util.Map.of("message", "Le tableau de fichiers ne peux pas être vide ou nul."));
         }
-        
+
         if (files.length > maxFilesPerUpload) {
             return ResponseEntity.badRequest()
-                .body(java.util.Map.of("message", "Nombre maximum de fichiers dépassé. Limite: " + maxFilesPerUpload + " fichiers"));
+                    .body(java.util.Map.of("message", "Nombre maximum de fichiers dépassé. Limite: " + maxFilesPerUpload + " fichiers"));
         }
-        
-        
-        if(creationDates == null || creationDates.size() == 0) {
+
+        if (creationDates == null || creationDates.isEmpty()) {
             logger.error("Liste de dates vide ou nul.");
             return ResponseEntity.badRequest()
-            .body(java.util.Map.of("message", "La liste de dates ne peux pas être vide ou nul."));
+                    .body(java.util.Map.of("message", "La liste de dates ne peux pas être vide ou nul."));
         }
-        
+
         try {
             List<LocalDateTime> parsedDates = creationDates.stream()
-                .map(dateStr -> LocalDateTime.parse(dateStr, java.time.format.DateTimeFormatter.ISO_DATE_TIME))
-                .toList();
+                    .map(dateStr -> LocalDateTime.parse(dateStr, java.time.format.DateTimeFormatter.ISO_DATE_TIME))
+                    .toList();
             List<PhotoDto> photoDtos = photoService.uploadPhotosWithDates(files, parsedDates);
-            logger.info("Photos uploadées avec dates personnalisées, IDs: {}", 
-            photoDtos.stream()
-                .map(p -> p.id())
-                .toArray());
+            logger.info("Photos uploadées avec dates personnalisées, IDs: {}",
+                    photoDtos.stream()
+                            .map(p -> p.id())
+                            .toArray());
             return ResponseEntity.ok(photoDtos);
         } catch (java.time.format.DateTimeParseException e) {
             logger.error("Format de date invalide : {}", e.getMessage());
             return ResponseEntity.badRequest()
-                .body(java.util.Map.of("message", "Format de date invalide. Utilisez le format ISO: yyyy-MM-dd'T'HH:mm:ss"));
+                    .body(java.util.Map.of("message", "Format de date invalide. Utilisez le format ISO: yyyy-MM-dd'T'HH:mm:ss"));
         } catch (MultiplePhotoUploadException e) {
             logger.warn("{} erreur(s) pendant l'upload multiple avec dates", e.getErrors().size());
             List<java.util.Map<String, String>> errors = e.getErrors()
-                .stream()
-                .map(error -> java.util.Map.of(
-                    "type", error.getClass().getSimpleName(),
-                    "message", error.getMessage() != null ? error.getMessage() : "Erreur inconnue"))
-                .toList();
+                    .stream()
+                    .map(error -> java.util.Map.of(
+                            "type", error.getClass().getSimpleName(),
+                            "message", error.getMessage() != null ? error.getMessage() : "Erreur inconnue"))
+                    .toList();
             return ResponseEntity.status(HttpStatus.MULTI_STATUS)
-                .body(java.util.Map.of(
-                    "uploadedPhotos", e.getUploadedPhotos(),
-                    "errors", errors));
+                    .body(java.util.Map.of(
+                            "uploadedPhotos", e.getUploadedPhotos(),
+                            "errors", errors));
         } catch (IllegalArgumentException e) {
             logger.error("Erreur de validation : {}", e.getMessage());
             return ResponseEntity.badRequest().body(null);
         } catch (DuplicatePhotoException e) {
             logger.info("Photo ignorée car déjà présente : {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.CONFLICT)
-            .body(java.util.Map.of("message", e.getMessage()));
+                    .body(java.util.Map.of("message", e.getMessage()));
         } catch (IOException e) {
             logger.error("Erreur IO : {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
-    
+
     /**
-    * Récupère la liste de toutes les photos.
-    * 
-    * @return ResponseEntity avec la liste des PhotoDto
-    */
+     * Récupère la liste de toutes les photos.
+     *
+     * @return ResponseEntity avec la liste des PhotoDto
+     */
     @GetMapping
     public ResponseEntity<List<PhotoDto>> getAllPhotos() {
         logger.info("Appel de getAllPhotos");
         List<PhotoDto> photos = photoService.getPhotosSortedByDate();
         return ResponseEntity.ok(photos);
     }
-    
+
     /**
-    * Récupère une photo par son ID.
-    * 
-    * @param id l'ID de la photo
-    * @return ResponseEntity avec le PhotoDto correspondant
-    */
+     * Récupère une photo par son ID.
+     *
+     * @param id l'ID de la photo
+     * @return ResponseEntity avec le PhotoDto correspondant
+     */
     @GetMapping("/{id}")
     public ResponseEntity<PhotoDto> getPhotoById(@PathVariable String id) {
         logger.info("Appel de getPhotoById");
@@ -295,49 +295,49 @@ public class PhotoController {
         }
         return ResponseEntity.notFound().build();
     }
-    
+
     /**
-    * Récupère les photos dans une plage de dates.
-    * 
-    * @param fromDate date de début (inclusive), format : yyyy-MM-dd'T'HH:mm:ss
-    * @param toDate date de fin (inclusive), format : yyyy-MM-dd'T'HH:mm:ss
-    * @return ResponseEntity avec la liste des PhotoDto filtrées
-    */
+     * Récupère les photos dans une plage de dates.
+     *
+     * @param fromDate date de début (inclusive), format : yyyy-MM-dd'T'HH:mm:ss
+     * @param toDate date de fin (inclusive), format : yyyy-MM-dd'T'HH:mm:ss
+     * @return ResponseEntity avec la liste des PhotoDto filtrées
+     */
     @GetMapping("/by-date")
     public ResponseEntity<List<PhotoDto>> getPhotosByDateRange(
-        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fromDate,
-        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime toDate) {
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fromDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime toDate) {
         logger.info("Appel de getPhotosByDateRange");
         logger.debug("fromDate={}, toDate={}", fromDate, toDate);
         List<PhotoDto> photos = photoService.getPhotosByDateRange(fromDate, toDate);
         return ResponseEntity.ok(photos);
     }
-    
+
     /**
-    * Télécharge une photo.
-    * 
-    * @param id l'ID de la photo à télécharger
-    * @return ResponseEntity avec le fichier à télécharger
-    */
+     * Télécharge une photo.
+     *
+     * @param id l'ID de la photo à télécharger
+     * @return ResponseEntity avec le fichier à télécharger
+     */
     @GetMapping("/{id}/download")
     public ResponseEntity<Resource> downloadPhoto(@PathVariable String id) {
         logger.info("Appel de downloadPhoto");
         PhotoDto photo = photoService.getPhotoById(id);
-        
+
         if (photo == null) {
             return ResponseEntity.notFound().build();
         }
-        
+
         try {
             Path filePath = fileStorageService.load(photo.storedPath());
             Resource resource = new UrlResource(filePath.toUri());
-            
+
             if (resource.exists() || resource.isReadable()) {
                 return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(photo.mimeType()))
-                .header(HttpHeaders.CONTENT_DISPOSITION, 
-                    "attachment; filename=\"" + photo.originalName() + "\"")
-                .body(resource);
+                        .contentType(MediaType.parseMediaType(photo.mimeType()))
+                        .header(HttpHeaders.CONTENT_DISPOSITION,
+                                "attachment; filename=\"" + photo.originalName() + "\"")
+                        .body(resource);
             } else {
                 return ResponseEntity.notFound().build();
             }
@@ -345,66 +345,66 @@ public class PhotoController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
-        
+
     /**
-    * Supprime une photo.
-    * 
-    * @param id l'ID de la photo à supprimer
-    * @return ResponseEntity avec un message de succès ou d'erreur
-    */
+     * Supprime une photo.
+     *
+     * @param id l'ID de la photo à supprimer
+     * @return ResponseEntity avec un message de succès ou d'erreur
+     */
     @DeleteMapping("/{id}")
     public ResponseEntity<String> deletePhoto(@PathVariable String id) {
         logger.info("Appel de deletePhoto");
         boolean deleted = photoService.deletePhoto(id);
-        
+
         if (deleted) {
             return ResponseEntity.ok("Photo supprimée avec succès");
         }
         return ResponseEntity.notFound().build();
     }
-    
+
     /**
-    * Supprime plusieurs photos.
-    * 
-    * @param photoIds liste des IDs des photos à supprimer
-    * @return ResponseEntity avec le résultat de la suppression
-    */
+     * Supprime plusieurs photos.
+     *
+     * @param photoIds liste des IDs des photos à supprimer
+     * @return ResponseEntity avec le résultat de la suppression
+     */
     @DeleteMapping("/multiple")
     public ResponseEntity<java.util.Map<String, Object>> deletePhotos(@RequestParam List<String> photoIds) {
         logger.info("Appel de deletePhotos");
         logger.debug("Paramètre photoIds : {}", photoIds);
-        
+
         // Supprimer les doublons
         List<String> uniquePhotoIds = photoIds.stream()
-            .distinct()
-            .collect(Collectors.toList());
-        
+                .distinct()
+                .collect(Collectors.toList());
+
         logger.debug("Identifiants uniques : {}", uniquePhotoIds);
-        
+
         DeleteResult result = photoService.deletePhotos(uniquePhotoIds);
-        
+
         java.util.Map<String, Object> response = java.util.Map.of(
-            "deletedCount", result.deletedIds().size(),
-            "deletedIds", result.deletedIds(),
-            "notFoundCount", result.notFoundIds().size(),
-            "notFoundIds", result.notFoundIds()
+                "deletedCount", result.deletedIds().size(),
+                "deletedIds", result.deletedIds(),
+                "notFoundCount", result.notFoundIds().size(),
+                "notFoundIds", result.notFoundIds()
         );
-        
+
         // Retourner 207 Multi-Status si certaines photos n'ont pas été trouvées
         if (!result.notFoundIds().isEmpty()) {
             logger.warn("{} photo(s) non trouvée(s) pendant la suppression multiple", result.notFoundIds().size());
             return ResponseEntity.status(HttpStatus.MULTI_STATUS).body(response);
         }
-        
+
         return ResponseEntity.ok(response);
     }
-    
+
     /**
-    * Récupère les métadonnées d'une photo.
-    * 
-    * @param id l'ID de la photo
-    * @return ResponseEntity avec le PhotoDto contenant les métadonnées
-    */
+     * Récupère les métadonnées d'une photo.
+     *
+     * @param id l'ID de la photo
+     * @return ResponseEntity avec le PhotoDto contenant les métadonnées
+     */
     @GetMapping("/{id}/metadata")
     public ResponseEntity<PhotoDto> getPhotoMetadata(@PathVariable String id) {
         logger.info("Appel de getPhotoMetadata");
@@ -414,66 +414,65 @@ public class PhotoController {
         }
         return ResponseEntity.notFound().build();
     }
-    
+
     /**
-    * Point d'entrée pour vérifier que le service est opérationnel.
-    * 
-    * @return ResponseEntity avec un message de statu
-    */
+     * Point d'entrée pour vérifier que le service est opérationnel.
+     *
+     * @return ResponseEntity avec un message de statu
+     */
     @GetMapping("/status")
     public ResponseEntity<String> status() {
         logger.info("Appel de status");
         return ResponseEntity.ok("Service Photo est opérationnel");
     }
-    
+
     /**
-    * Télécharge plusieurs photos en un seul fichier ZIP.
-    * 
-    * @param photoIds liste des identifiants de photos à télécharger
-    * @return ResponseEntity avec le fichier ZIP à télécharger
-    */
+     * Télécharge plusieurs photos en un seul fichier ZIP.
+     *
+     * @param photoIds liste des identifiants de photos à télécharger
+     * @return ResponseEntity avec le fichier ZIP à télécharger
+     */
     @PostMapping("/download/bulk")
     public ResponseEntity<byte[]> downloadPhotosBulk(@RequestParam List<String> photoIds) {
         logger.info("Appel de downloadPhotosBulk");
         logger.debug("Paramètre photoIds : {}", photoIds);
-        
+
         // Supprimer les doublons
         List<String> uniquePhotoIds = photoIds.stream()
-        .distinct()
-        .collect(Collectors.toList());
-        
+                .distinct()
+                .collect(Collectors.toList());
+
         logger.debug("Identifiants uniques : {}", uniquePhotoIds);
-        
+
         // Récupérer les photos correspondantes
         List<PhotoDto> photos = photoService.getPhotosByIds(uniquePhotoIds);
-        
+
         if (photos.isEmpty()) {
             logger.warn("Aucune photo trouvée pour les identifiants fournis");
             return ResponseEntity.notFound().build();
         }
-        
+
         logger.debug("Photos trouvées : {}", photos.size());
-        
+
         try {
             // Créer le ZIP avec les photos
             List<String> storedPaths = photos.stream()
-                .map(p -> p.storedPath())
-                .collect(Collectors.toList());
-            
+                    .map(p -> p.storedPath())
+                    .collect(Collectors.toList());
+
             byte[] zipBytes = fileStorageService.createZipFromPaths(storedPaths);
-            
+
             // Déterminer le nom du fichier ZIP
             String zipFileName = "photos_" + java.time.LocalDate.now() + ".zip";
-            
+
             return ResponseEntity.ok()
-            .contentType(MediaType.APPLICATION_OCTET_STREAM)
-            .header(HttpHeaders.CONTENT_DISPOSITION, 
-                "attachment; filename=\"" + zipFileName + "\"")
-                .body(zipBytes);
-            } catch (IOException e) {
-                logger.error("Erreur lors de la création du ZIP : {}", e.getMessage(), e);
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-            }
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .header(HttpHeaders.CONTENT_DISPOSITION,
+                            "attachment; filename=\"" + zipFileName + "\"")
+                    .body(zipBytes);
+        } catch (IOException e) {
+            logger.error("Erreur lors de la création du ZIP : {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
-                
+}
