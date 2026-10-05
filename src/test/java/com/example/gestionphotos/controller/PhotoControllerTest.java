@@ -3,6 +3,7 @@ package com.example.gestionphotos.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -211,6 +212,27 @@ class PhotoControllerTest {
         mockMvc.perform(multipart("/api/photos/upload/multiple")
                         .file(file))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void uploadPhotos_shouldReturnBadRequestWhenFileCountExceedsLimit() throws Exception {
+        // Arrange
+        var request = multipart("/api/photos/upload/multiple");
+        for (int i = 0; i < 11; i++) {
+            request.file(new MockMultipartFile(
+                    "files",
+                    "photo" + i + ".jpg",
+                    TEST_MIME_TYPE,
+                    "test content".getBytes()
+            ));
+        }
+
+        // Act & Assert
+        mockMvc.perform(request)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Nombre maximum de fichiers dépassé. Limite: 10 fichiers"));
+        verify(photoService, never()).uploadPhotos(any());
     }
 
     @Test
