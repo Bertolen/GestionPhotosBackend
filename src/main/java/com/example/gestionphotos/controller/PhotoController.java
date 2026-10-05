@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -42,8 +43,15 @@ public class PhotoController {
     
     private static final Logger logger = LoggerFactory.getLogger(PhotoController.class);
     
+    @Value("${app.upload.max-files-per-upload:10}")
+    private int maxFilesPerUpload;
+    
     private final PhotoService photoService;
     private final FileStorageService fileStorageService;
+    
+    public void setMaxFilesPerUpload(int maxFilesPerUpload) {
+        this.maxFilesPerUpload = maxFilesPerUpload;
+    }
     
     @Autowired
     public PhotoController(PhotoService photoService, FileStorageService fileStorageService) {
@@ -94,6 +102,17 @@ public class PhotoController {
     public ResponseEntity<?> uploadPhotos(@RequestParam("files") MultipartFile[] files) {
         logger.info("Appel de uploadPhotos");
         logger.debug("Paramètre files : null={}, length={}", files == null, files != null ? files.length : 0);
+        
+        if (files == null || files.length == 0) {
+            return ResponseEntity.badRequest()
+                .body(java.util.Map.of("message", "Au moins un fichier doit être fourni"));
+        }
+        
+        if (files.length > maxFilesPerUpload) {
+            return ResponseEntity.badRequest()
+                .body(java.util.Map.of("message", "Nombre maximum de fichiers dépassé. Limite: " + maxFilesPerUpload + " fichiers"));
+        }
+        
         if (files != null) {
             for(MultipartFile f : files){
                 logger.debug("File details - name: {}, size: {}, contentType: {}", 
@@ -197,6 +216,12 @@ public class PhotoController {
             return ResponseEntity.badRequest()
             .body(java.util.Map.of("message", "Le tableau de fichiers ne peux pas être vide ou nul."));
         }
+        
+        if (files.length > maxFilesPerUpload) {
+            return ResponseEntity.badRequest()
+                .body(java.util.Map.of("message", "Nombre maximum de fichiers dépassé. Limite: " + maxFilesPerUpload + " fichiers"));
+        }
+        
         
         if(creationDates == null || creationDates.size() == 0) {
             logger.error("Liste de dates vide ou nul.");

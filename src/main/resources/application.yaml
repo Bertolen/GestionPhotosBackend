@@ -6,6 +6,7 @@ app:
     path: ./photos-storage
   upload:
     max-file-size: 1073741824
+    max-files-per-upload: 10
     allowed-mime-types: image/jpeg,image/png,image/gif,image/webp,image/jpg
 
 spring:
