@@ -22,9 +22,9 @@
         <!-- Configuration Docker -->
         <docker.image.name>gestion-photos</docker.image.name>
         <docker.image.tag>${project.version}</docker.image.tag>
-        <raspberry.pi.ip>192.168.1.100</raspberry.pi.ip>
-        <raspberry.pi.user>pi</raspberry.pi.user>
-        <raspberry.pi.dest>/home/pi/</raspberry.pi.dest>
+        <raspberry.pi.ip>192.168.1.19</raspberry.pi.ip>
+        <raspberry.pi.user>bertolen</raspberry.pi.user>
+        <raspberry.pi.dest>/home/bertolen/</raspberry.pi.dest>
     </properties>
     
     <dependencies>
