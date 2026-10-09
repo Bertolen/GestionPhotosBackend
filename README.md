@@ -100,7 +100,7 @@ GestionArgent/
 server.port=8080
 
 # Chemin de stockage des photos
-app.storage.path=./photos-storage
+app.storage.path=${APP_STORAGE_PATH:./photos-storage}
 
 # Taille maximale des uploads (1 Go)
 app.upload.max-file-size=1073741824
@@ -113,9 +113,11 @@ app.upload.allowed-mime-types=image/jpeg,image/png,image/gif,image/webp,image/jp
 Le chemin `./photos-storage` créera un dossier dans le répertoire du projet.
 
 ### Pour la production sur Raspberry Pi
-Modifiez dans `application.properties` :
-```properties
-app.storage.path=/home/pi/photo-storage
+La variable d'environnement `APP_STORAGE_PATH` remplace le chemin par défaut `./photos-storage` :
+```bash
+docker run -e APP_STORAGE_PATH=/data/photos \
+  -v /home/pi/photo-storage:/data/photos \
+  -p 8080:8080 gestion-photos:0.0.1-SNAPSHOT
 ```
 
 ## 📦 Dépendances
