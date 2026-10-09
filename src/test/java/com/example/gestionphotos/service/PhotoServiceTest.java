@@ -1,0 +1,737 @@
+package com.example.gestionphotos.service;
+
+import com.example.gestionphotos.dto.PhotoDto;
+import com.example.gestionphotos.exception.DuplicatePhotoException;
+import com.example.gestionphotos.exception.MultiplePhotoUploadException;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import java.io.IOException;
+import java.time.LocalDateTime;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.*;
+
+/**
+ * Tests unitaires pour PhotoService.
+ */
+@ExtendWith(MockitoExtension.class)
+class PhotoServiceTest {
+
+    @Mock
+    private FileStorageService fileStorageService;
+
+    @Mock
+    private MultipartFile multipartFile;
+
+    @InjectMocks
+    private PhotoService photoService;
+
+    @BeforeEach
+    void setUp() {
+        // Initialiser les champs injectes par @Value pour eviter les valeurs par defaut (0 octets)
+        ReflectionTestUtils.setField(photoService, "maxFileSize", 10L * 1024L * 1024L); // 10MB
+        ReflectionTestUtils.setField(photoService, "allowedMimeTypes", 
+                new String[]{"image/jpeg", "image/png", "image/gif", "image/webp"});
+    }
+
+    // Format des noms de fichiers : YYYYMMDD_HHmmss_UUID8.ext
+    private static final String TEST_TIMESTAMP = "20240922_123045";
+    private static final String TEST_UUID = "ab123456";
+    private static final String TEST_STORED_PATH = TEST_TIMESTAMP + "_" + TEST_UUID + ".jpg";
+    private static final String TEST_ORIGINAL_NAME = "test.jpg";
+    private static final String TEST_FILE_NAME = TEST_TIMESTAMP + "_" + TEST_UUID + ".jpg";
+    private static final long TEST_SIZE = 1024L;
+    private static final String TEST_MIME_TYPE = "image/jpeg";
+
+
+    // ==================== Tests pour uploadPhoto ====================
+
+    @Test
+    void uploadPhoto_shouldCreateDtoWithAllMetadata() throws IOException {
+        // Arrange
+        when(multipartFile.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME);
+        when(multipartFile.getSize()).thenReturn(TEST_SIZE);
+        when(multipartFile.getContentType()).thenReturn(TEST_MIME_TYPE);
+        when(fileStorageService.store(multipartFile)).thenReturn(TEST_STORED_PATH);
+
+        // Act
+        PhotoDto result = photoService.uploadPhoto(multipartFile);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(TEST_UUID, result.id());
+        assertEquals(TEST_ORIGINAL_NAME, result.originalName());
+        assertEquals(TEST_STORED_PATH, result.storedPath());
+        assertEquals(TEST_FILE_NAME, result.fileName());
+        assertEquals(TEST_SIZE, result.size());
+        assertEquals(TEST_MIME_TYPE, result.mimeType());
+        assertNotNull(result.uploadDate());
+        assertNotNull(result.creationDate());
+    }
+
+    @Test
+    void uploadPhoto_shouldExtractCreationDateFromTimestampInFilename() throws IOException {
+        // Arrange - fichier avec timestamp dans le nom
+        String timestampedFilename = "20240922_123045.jpg";
+        LocalDateTime expectedDate = LocalDateTime.of(2024, 9, 22, 12, 30, 45);
+        
+        when(multipartFile.getOriginalFilename()).thenReturn(timestampedFilename);
+        when(multipartFile.getSize()).thenReturn(TEST_SIZE);
+        when(multipartFile.getContentType()).thenReturn(TEST_MIME_TYPE);
+        when(fileStorageService.store(multipartFile)).thenReturn(TEST_STORED_PATH);
+
+        // Act
+        PhotoDto result = photoService.uploadPhoto(multipartFile);
+
+        // Assert - la date de creation doit correspondre au timestamp extrait
+        assertEquals(expectedDate, result.creationDate());
+    }
+
+
+    // ==================== Tests pour uploadPhotos ====================
+
+    @Test
+    void uploadPhotos_shouldUploadMultipleNonEmptyFiles() throws IOException {
+        // Arrange
+        MultipartFile[] files = new MultipartFile[]{multipartFile, multipartFile};
+        when(multipartFile.isEmpty()).thenReturn(false);
+        when(multipartFile.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME);
+        when(multipartFile.getSize()).thenReturn(TEST_SIZE);
+        when(multipartFile.getContentType()).thenReturn(TEST_MIME_TYPE);
+        when(fileStorageService.store(multipartFile))
+                .thenReturn(TEST_STORED_PATH + "_1")
+                .thenReturn(TEST_STORED_PATH + "_2");
+
+        // Act
+        List<PhotoDto> result = photoService.uploadPhotos(files);
+
+        // Assert
+        assertEquals(2, result.size());
+        assertEquals(TEST_UUID, result.get(0).id());
+        assertEquals(TEST_UUID, result.get(1).id());
+    }
+
+    @Test
+    void uploadPhotos_shouldSkipEmptyFiles() throws IOException {
+        // Arrange
+        MultipartFile emptyFile = mock(MultipartFile.class);
+        MultipartFile validFile = mock(MultipartFile.class);
+        MultipartFile[] files = new MultipartFile[]{emptyFile, validFile};
+
+        when(emptyFile.isEmpty()).thenReturn(true);
+        when(validFile.isEmpty()).thenReturn(false);
+        when(validFile.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME);
+        when(validFile.getSize()).thenReturn(TEST_SIZE);
+        when(validFile.getContentType()).thenReturn(TEST_MIME_TYPE);
+        when(fileStorageService.store(validFile)).thenReturn(TEST_STORED_PATH);
+
+        // Act
+        List<PhotoDto> result = photoService.uploadPhotos(files);
+
+        // Assert
+        assertEquals(1, result.size());
+        assertEquals(TEST_UUID, result.get(0).id());
+        verify(fileStorageService, times(1)).store(validFile);
+        verify(fileStorageService, never()).store(emptyFile);
+    }
+
+    @Test
+    void uploadPhotos_shouldProcessAllFilesAndAggregateErrors() throws IOException {
+        // Arrange
+        MultipartFile duplicateFile = mock(MultipartFile.class);
+        MultipartFile validFile = mock(MultipartFile.class);
+        MultipartFile[] files = new MultipartFile[]{duplicateFile, validFile};
+
+        when(duplicateFile.isEmpty()).thenReturn(false);
+        when(duplicateFile.getSize()).thenReturn(TEST_SIZE);
+        when(duplicateFile.getContentType()).thenReturn(TEST_MIME_TYPE);
+        when(validFile.isEmpty()).thenReturn(false);
+        when(validFile.getSize()).thenReturn(TEST_SIZE);
+        when(validFile.getContentType()).thenReturn(TEST_MIME_TYPE);
+        when(validFile.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME);
+        when(fileStorageService.store(duplicateFile))
+                .thenThrow(new DuplicatePhotoException("La photo existe deja"));
+        when(fileStorageService.store(validFile)).thenReturn(TEST_STORED_PATH);
+
+        // Act
+        MultiplePhotoUploadException exception = assertThrows(
+                MultiplePhotoUploadException.class,
+                () -> photoService.uploadPhotos(files));
+
+        // Assert
+        assertEquals(1, exception.getUploadedPhotos().size());
+        assertEquals(1, exception.getErrors().size());
+        verify(fileStorageService).store(duplicateFile);
+        verify(fileStorageService).store(validFile);
+    }
+
+    @Test
+    void uploadPhotos_shouldReturnEmptyListWhenAllFilesEmpty() throws IOException {
+        // Arrange
+        MultipartFile emptyFile1 = mock(MultipartFile.class);
+        MultipartFile emptyFile2 = mock(MultipartFile.class);
+        when(emptyFile1.isEmpty()).thenReturn(true);
+        when(emptyFile2.isEmpty()).thenReturn(true);
+
+        // Act
+        List<PhotoDto> result = photoService.uploadPhotos(new MultipartFile[]{emptyFile1, emptyFile2});
+
+        // Assert
+        assertTrue(result.isEmpty());
+        verify(fileStorageService, never()).store(any());
+    }
+
+
+    // ==================== Tests pour getPhotoById ====================
+
+    @Test
+    void getPhotoById_shouldReturnCorrectPhoto() {
+        // Arrange
+        PhotoDto photo1 = new PhotoDto("id1", "name1.jpg", "path1", "file1.jpg", 100L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+        PhotoDto photo2 = new PhotoDto("id2", "name2.jpg", "path2", "file2.jpg", 200L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+
+        PhotoService spyService = spy(photoService);
+        doReturn(new ArrayList<>(List.of(photo1, photo2))).when(spyService).getAllPhotos();
+
+        // Act
+        PhotoDto result = spyService.getPhotoById("id2");
+
+        // Assert
+        assertNotNull(result);
+        assertEquals("id2", result.id());
+        assertEquals("name2.jpg", result.originalName());
+    }
+
+    @Test
+    void getPhotoById_shouldReturnNullWhenNotFound() {
+        // Arrange
+        PhotoDto photo1 = new PhotoDto("id1", "name1.jpg", "path1", "file1.jpg", 100L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+
+        PhotoService spyService = spy(photoService);
+        doReturn(new ArrayList<>(List.of(photo1))).when(spyService).getAllPhotos();
+
+        // Act
+        PhotoDto result = spyService.getPhotoById("non-existent-id");
+
+        // Assert
+        assertNull(result);
+    }
+
+
+    // ==================== Tests pour deletePhoto ====================
+
+    @Test
+    void deletePhoto_shouldDeleteAndReturnTrue() throws IOException {
+        // Arrange
+        PhotoDto photo = new PhotoDto(TEST_UUID, TEST_ORIGINAL_NAME, TEST_STORED_PATH,
+                TEST_FILE_NAME, TEST_SIZE, TEST_MIME_TYPE, LocalDateTime.now(), LocalDateTime.now());
+
+        PhotoService spyService = spy(photoService);
+        doReturn(photo).when(spyService).getPhotoById(TEST_UUID);
+        doNothing().when(fileStorageService).delete(TEST_STORED_PATH);
+
+        // Act
+        boolean result = spyService.deletePhoto(TEST_UUID);
+
+        // Assert
+        assertTrue(result);
+        verify(fileStorageService).delete(TEST_STORED_PATH);
+    }
+
+    @Test
+    void deletePhoto_shouldReturnFalseWhenPhotoNotFound() throws IOException {
+        // Arrange
+        PhotoService spyService = spy(photoService);
+        doReturn(null).when(spyService).getPhotoById("non-existent-id");
+
+        // Act
+        boolean result = spyService.deletePhoto("non-existent-id");
+
+        // Assert
+        assertFalse(result);
+        verify(fileStorageService, never()).delete(anyString());
+    }
+
+
+    // ==================== Tests pour deletePhotos ====================
+
+    @Test
+    void deletePhotos_shouldDeleteAllPhotos() throws IOException {
+        // Arrange
+        PhotoDto photo1 = new PhotoDto("id1", "name1.jpg", "path1", "file1.jpg", 100L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+        PhotoDto photo2 = new PhotoDto("id2", "name2.jpg", "path2", "file2.jpg", 200L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+
+        PhotoService spyService = spy(photoService);
+        doReturn(photo1).when(spyService).getPhotoById("id1");
+        doReturn(photo2).when(spyService).getPhotoById("id2");
+        doNothing().when(fileStorageService).delete(anyString());
+
+        // Act
+        DeleteResult result = spyService.deletePhotos(List.of("id1", "id2"));
+
+        // Assert
+        assertEquals(2, result.deletedIds().size());
+        assertEquals(0, result.notFoundIds().size());
+        assertTrue(result.deletedIds().contains("id1"));
+        assertTrue(result.deletedIds().contains("id2"));
+        verify(fileStorageService).delete("path1");
+        verify(fileStorageService).delete("path2");
+    }
+
+    @Test
+    void deletePhotos_shouldReturnNotFoundForMissingPhotos() throws IOException {
+        // Arrange
+        PhotoDto photo1 = new PhotoDto("id1", "name1.jpg", "path1", "file1.jpg", 100L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+
+        PhotoService spyService = spy(photoService);
+        doReturn(photo1).when(spyService).getPhotoById("id1");
+        doReturn(null).when(spyService).getPhotoById("id2");
+        doReturn(null).when(spyService).getPhotoById("id3");
+        doNothing().when(fileStorageService).delete(anyString());
+
+        // Act
+        DeleteResult result = spyService.deletePhotos(List.of("id1", "id2", "id3"));
+
+        // Assert
+        assertEquals(1, result.deletedIds().size());
+        assertEquals(2, result.notFoundIds().size());
+        assertTrue(result.deletedIds().contains("id1"));
+        assertTrue(result.notFoundIds().contains("id2"));
+        assertTrue(result.notFoundIds().contains("id3"));
+        verify(fileStorageService).delete("path1");
+        verify(fileStorageService, never()).delete("path2");
+        verify(fileStorageService, never()).delete("path3");
+    }
+
+    @Test
+    void deletePhotos_shouldHandleEmptyList() {
+        // Act
+        DeleteResult result = photoService.deletePhotos(List.of());
+
+        // Assert
+        assertEquals(0, result.deletedIds().size());
+        assertEquals(0, result.notFoundIds().size());
+    }
+
+    @Test
+    void deletePhotos_shouldHandleNullList() {
+        // Act
+        DeleteResult result = photoService.deletePhotos(null);
+
+        // Assert
+        assertEquals(0, result.deletedIds().size());
+        assertEquals(0, result.notFoundIds().size());
+    }
+
+    @Test
+    void deletePhotos_shouldReturnNotFoundForAllMissingPhotos() throws IOException {
+        // Arrange
+        PhotoService spyService = spy(photoService);
+        doReturn(null).when(spyService).getPhotoById(anyString());
+
+        // Act
+        DeleteResult result = spyService.deletePhotos(List.of("id1", "id2"));
+
+        // Assert
+        assertEquals(0, result.deletedIds().size());
+        assertEquals(2, result.notFoundIds().size());
+        assertTrue(result.notFoundIds().contains("id1"));
+        assertTrue(result.notFoundIds().contains("id2"));
+        verify(fileStorageService, never()).delete(anyString());
+    }
+
+    @Test
+    void deletePhotos_shouldHandleDuplicatesInInput() throws IOException {
+        // Arrange
+        PhotoDto photo1 = new PhotoDto("id1", "name1.jpg", "path1", "file1.jpg", 100L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+
+        PhotoService spyService = spy(photoService);
+        doReturn(photo1).when(spyService).getPhotoById("id1");
+        doReturn(null).when(spyService).getPhotoById("id2");
+        doNothing().when(fileStorageService).delete(anyString());
+
+        // Act - passer id1 deux fois
+        DeleteResult result = spyService.deletePhotos(List.of("id1", "id1", "id2"));
+
+        // Assert
+        assertEquals(2, result.deletedIds().size());
+        assertEquals(1, result.notFoundIds().size());
+        assertTrue(result.deletedIds().contains("id1"));
+        assertTrue(result.notFoundIds().contains("id2"));
+        // deletePhoto est appelé 3 fois (une fois par élément dans la liste d'entrée)
+        verify(spyService, times(3)).deletePhoto(anyString());
+    }
+
+
+    // ==================== Tests pour getPhotosByDateRange ====================
+
+    @Test
+    void getPhotosByDateRange_shouldFilterPhotosInRange() {
+        // Arrange
+        LocalDateTime from = LocalDateTime.of(2024, 1, 1, 0, 0);
+        LocalDateTime to = LocalDateTime.of(2024, 12, 31, 23, 59);
+        LocalDateTime dateInRange = LocalDateTime.of(2024, 6, 15, 12, 0);
+        LocalDateTime dateOutOfRange = LocalDateTime.of(2023, 6, 15, 12, 0);
+
+        PhotoDto photoInRange = new PhotoDto("id1", "n1.jpg", "p1", "f1.jpg", 100L, "image/jpeg",
+                dateInRange, dateInRange);
+        PhotoDto photoOutOfRange = new PhotoDto("id2", "n2.jpg", "p2", "f2.jpg", 200L, "image/jpeg",
+                dateOutOfRange, dateOutOfRange);
+
+        PhotoService spyService = spy(photoService);
+        doReturn(new ArrayList<>(List.of(photoInRange, photoOutOfRange))).when(spyService).getAllPhotos();
+
+        // Act
+        List<PhotoDto> result = spyService.getPhotosByDateRange(from, to);
+
+        // Assert
+        assertEquals(1, result.size());
+        assertEquals("id1", result.get(0).id());
+    }
+
+    @Test
+    void getPhotosByDateRange_shouldReturnEmptyListWhenNoMatch() {
+        // Arrange
+        LocalDateTime from = LocalDateTime.of(2024, 1, 1, 0, 0);
+        LocalDateTime to = LocalDateTime.of(2024, 12, 31, 23, 59);
+        LocalDateTime dateOutOfRange = LocalDateTime.of(2023, 6, 15, 12, 0);
+
+        PhotoDto photo = new PhotoDto("id1", "n1.jpg", "p1", "f1.jpg", 100L, "image/jpeg",
+                dateOutOfRange, dateOutOfRange);
+
+        PhotoService spyService = spy(photoService);
+        doReturn(new ArrayList<>(List.of(photo))).when(spyService).getAllPhotos();
+
+        // Act
+        List<PhotoDto> result = spyService.getPhotosByDateRange(from, to);
+
+        // Assert
+        assertTrue(result.isEmpty());
+    }
+
+
+    // ==================== Tests pour getPhotosSortedByDate ====================
+
+    @Test
+    void getPhotosSortedByDate_shouldSortDescending() {
+        // Arrange
+        LocalDateTime newer = LocalDateTime.of(2024, 9, 22, 12, 0);
+        LocalDateTime older = LocalDateTime.of(2024, 9, 21, 12, 0);
+
+        PhotoDto newerPhoto = new PhotoDto("id-newer", "newer.jpg", "path-newer", "file-newer.jpg",
+                200L, "image/jpeg", newer, newer);
+        PhotoDto olderPhoto = new PhotoDto("id-older", "older.jpg", "path-older", "file-older.jpg",
+                100L, "image/jpeg", older, older);
+
+        PhotoService spyService = spy(photoService);
+        doReturn(new ArrayList<>(List.of(olderPhoto, newerPhoto))).when(spyService).getAllPhotos();
+
+        // Act
+        List<PhotoDto> result = spyService.getPhotosSortedByDate();
+
+        // Assert
+        assertEquals(2, result.size());
+        assertEquals("id-newer", result.get(0).id());
+        assertEquals("id-older", result.get(1).id());
+    }
+
+
+    // ==================== Tests pour uploadPhotoWithDate ====================
+
+    @Test
+    void uploadPhotoWithDate_shouldCreateDtoWithSpecifiedCreationDate() throws IOException {
+        // Arrange
+        LocalDateTime specifiedDate = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+        when(multipartFile.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME);
+        when(multipartFile.getSize()).thenReturn(TEST_SIZE);
+        when(multipartFile.getContentType()).thenReturn(TEST_MIME_TYPE);
+        when(fileStorageService.store(multipartFile)).thenReturn(TEST_STORED_PATH);
+
+        // Act
+        PhotoDto result = photoService.uploadPhotoWithDate(multipartFile, specifiedDate);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(TEST_UUID, result.id());
+        assertEquals(TEST_ORIGINAL_NAME, result.originalName());
+        assertEquals(specifiedDate, result.creationDate());
+        assertNotNull(result.uploadDate());
+    }
+
+    @Test
+    void uploadPhotoWithDate_shouldThrowWhenFileIsNull() {
+        LocalDateTime specifiedDate = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+
+        try {
+            photoService.uploadPhotoWithDate(null, specifiedDate);
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            // expected
+        } catch (IOException e) {
+            fail("Unexpected IOException");
+        }
+    }
+
+    @Test
+    void uploadPhotoWithDate_shouldThrowWhenFileIsEmpty() {
+        // Arrange
+        LocalDateTime specifiedDate = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+        when(multipartFile.isEmpty()).thenReturn(true);
+
+        // Act & Assert
+        try {
+            photoService.uploadPhotoWithDate(multipartFile, specifiedDate);
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            // expected
+        } catch (IOException e) {
+            fail("Unexpected IOException");
+        }
+    }
+
+    @Test
+    void uploadPhotoWithDate_shouldThrowWhenFileExceedsMaxSize() {
+        // Arrange
+        LocalDateTime specifiedDate = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+        ReflectionTestUtils.setField(photoService, "maxFileSize", 1024L * 1024L); // 1MB
+        when(multipartFile.isEmpty()).thenReturn(false);
+        when(multipartFile.getSize()).thenReturn(2L * 1024L * 1024L); // 2MB
+
+        // Act & Assert
+        try {
+            photoService.uploadPhotoWithDate(multipartFile, specifiedDate);
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            // expected
+        } catch (IOException e) {
+            fail("Unexpected IOException");
+        }
+    }
+
+    @Test
+    void uploadPhotoWithDate_shouldThrowWhenMimeTypeNotAllowed() {
+        // Arrange
+        LocalDateTime specifiedDate = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+        ReflectionTestUtils.setField(photoService, "maxFileSize", 10L * 1024L * 1024L);
+        ReflectionTestUtils.setField(photoService, "allowedMimeTypes", 
+                new String[]{"image/jpeg", "image/png"});
+        when(multipartFile.isEmpty()).thenReturn(false);
+        when(multipartFile.getSize()).thenReturn(100L);
+        when(multipartFile.getContentType()).thenReturn("application/pdf");
+
+        // Act & Assert
+        try {
+            photoService.uploadPhotoWithDate(multipartFile, specifiedDate);
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            // expected
+        } catch (IOException e) {
+            fail("Unexpected IOException");
+        }
+    }
+
+
+    // ==================== Tests pour uploadPhotosWithDates ====================
+
+    @Test
+    void uploadPhotosWithDates_shouldUploadMultiplePhotosWithCustomDates() throws IOException {
+        // Arrange
+        LocalDateTime date1 = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+        LocalDateTime date2 = LocalDateTime.of(2023, 6, 16, 11, 45, 0);
+        MultipartFile[] files = new MultipartFile[]{multipartFile, multipartFile};
+
+        when(multipartFile.isEmpty()).thenReturn(false);
+        when(multipartFile.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME);
+        when(multipartFile.getSize()).thenReturn(TEST_SIZE);
+        when(multipartFile.getContentType()).thenReturn(TEST_MIME_TYPE);
+        when(fileStorageService.store(multipartFile))
+                .thenReturn(TEST_STORED_PATH + "_1")
+                .thenReturn(TEST_STORED_PATH + "_2");
+
+        // Act
+        List<PhotoDto> result = photoService.uploadPhotosWithDates(files, List.of(date1, date2));
+
+        // Assert
+        assertEquals(2, result.size());
+        assertEquals(date1, result.get(0).creationDate());
+        assertEquals(date2, result.get(1).creationDate());
+    }
+
+    @Test
+    void uploadPhotosWithDates_shouldThrowWhenCountsDoNotMatch() throws IOException {
+        // Arrange
+        LocalDateTime date = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+        MultipartFile[] files = new MultipartFile[]{multipartFile, multipartFile};
+
+        // Act & Assert
+        try {
+            photoService.uploadPhotosWithDates(files, List.of(date));
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("doit correspondre"));
+        }
+    }
+
+    @Test
+    void uploadPhotosWithDates_shouldThrowWhenFilesIsNull() throws IOException {
+        // Arrange
+        LocalDateTime date = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+
+        // Act & Assert
+        try {
+            photoService.uploadPhotosWithDates(null, List.of(date));
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            // expected
+        }
+    }
+
+    @Test
+    void uploadPhotosWithDates_shouldThrowWhenDatesIsNull() throws IOException {
+        // Arrange
+        MultipartFile[] files = new MultipartFile[]{multipartFile};
+
+        // Act & Assert
+        try {
+            photoService.uploadPhotosWithDates(files, null);
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            // expected
+        }
+    }
+
+    @Test
+    void uploadPhotosWithDates_shouldSkipEmptyFiles() throws IOException {
+        // Arrange
+        LocalDateTime date1 = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+        LocalDateTime date2 = LocalDateTime.of(2023, 6, 16, 11, 45, 0);
+        LocalDateTime date3 = LocalDateTime.of(2023, 6, 17, 12, 0, 0);
+
+        MultipartFile emptyFile = mock(MultipartFile.class);
+        MultipartFile validFile1 = mock(MultipartFile.class);
+        MultipartFile validFile2 = mock(MultipartFile.class);
+        MultipartFile[] files = new MultipartFile[]{emptyFile, validFile1, validFile2};
+
+        when(emptyFile.isEmpty()).thenReturn(true);
+        when(validFile1.isEmpty()).thenReturn(false);
+        when(validFile2.isEmpty()).thenReturn(false);
+        when(validFile1.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME);
+        when(validFile1.getSize()).thenReturn(TEST_SIZE);
+        when(validFile1.getContentType()).thenReturn(TEST_MIME_TYPE);
+        when(validFile2.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME + "2");
+        when(validFile2.getSize()).thenReturn(TEST_SIZE);
+        when(validFile2.getContentType()).thenReturn(TEST_MIME_TYPE);
+        when(fileStorageService.store(validFile1)).thenReturn(TEST_STORED_PATH + "_1");
+        when(fileStorageService.store(validFile2)).thenReturn(TEST_STORED_PATH + "_2");
+
+        // Act
+        List<PhotoDto> result = photoService.uploadPhotosWithDates(
+                files, List.of(date1, date2, date3));
+
+        // Assert
+        assertEquals(2, result.size());
+        assertEquals(date2, result.get(0).creationDate());
+        assertEquals(date3, result.get(1).creationDate());
+        verify(fileStorageService, never()).store(emptyFile);
+    }
+
+
+    // ==================== Tests pour getPhotosByIds ====================
+
+    @Test
+    void getPhotosByIds_shouldReturnMatchingPhotos() {
+        // Arrange
+        PhotoDto photo1 = new PhotoDto("id1", "name1.jpg", "path1", "file1.jpg", 100L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+        PhotoDto photo2 = new PhotoDto("id2", "name2.jpg", "path2", "file2.jpg", 200L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+        PhotoDto photo3 = new PhotoDto("id3", "name3.jpg", "path3", "file3.jpg", 300L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+
+        PhotoService spyService = spy(photoService);
+        doReturn(new ArrayList<>(List.of(photo1, photo2, photo3))).when(spyService).getAllPhotos();
+
+        // Act
+        List<PhotoDto> result = spyService.getPhotosByIds(List.of("id1", "id3"));
+
+        // Assert
+        assertEquals(2, result.size());
+        assertTrue(result.stream().anyMatch(p -> p.id().equals("id1")));
+        assertTrue(result.stream().anyMatch(p -> p.id().equals("id3")));
+    }
+
+    @Test
+    void getPhotosByIds_shouldReturnEmptyListWhenNoMatch() {
+        // Arrange
+        PhotoDto photo1 = new PhotoDto("id1", "name1.jpg", "path1", "file1.jpg", 100L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+
+        PhotoService spyService = spy(photoService);
+        doReturn(new ArrayList<>(List.of(photo1))).when(spyService).getAllPhotos();
+
+        // Act
+        List<PhotoDto> result = spyService.getPhotosByIds(List.of("non-existent-id"));
+
+        // Assert
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void getPhotosByIds_shouldReturnEmptyListWhenInputIsEmpty() {
+        // Act
+        List<PhotoDto> result = photoService.getPhotosByIds(List.of());
+
+        // Assert
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void getPhotosByIds_shouldReturnEmptyListWhenInputIsNull() {
+        // Act
+        List<PhotoDto> result = photoService.getPhotosByIds(null);
+
+        // Assert
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void getPhotosByIds_shouldReturnAllPhotosWhenAllMatch() {
+        // Arrange
+        PhotoDto photo1 = new PhotoDto("id1", "name1.jpg", "path1", "file1.jpg", 100L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+        PhotoDto photo2 = new PhotoDto("id2", "name2.jpg", "path2", "file2.jpg", 200L, "image/jpeg",
+                LocalDateTime.now(), LocalDateTime.now());
+
+        PhotoService spyService = spy(photoService);
+        doReturn(new ArrayList<>(List.of(photo1, photo2))).when(spyService).getAllPhotos();
+
+        // Act
+        List<PhotoDto> result = spyService.getPhotosByIds(List.of("id1", "id2"));
+
+        // Assert
+        assertEquals(2, result.size());
+        assertTrue(result.stream().anyMatch(p -> p.id().equals("id1")));
+        assertTrue(result.stream().anyMatch(p -> p.id().equals("id2")));
+    }
+
+
+}

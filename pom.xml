@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.0.0</version>
+        <relativePath/>
+    </parent>
+    
+    <groupId>com.example</groupId>
+    <artifactId>gestion-photos</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>GestionPhotos Spring Boot</name>
+    <description>Application Spring Boot pour la gestion de photos avec upload, téléchargement et tri par date/heure</description>
+    
+    <properties>
+        <java.version>21</java.version>
+        <!-- Configuration Docker -->
+        <docker.image.name>gestion-photos</docker.image.name>
+        <docker.image.tag>${project.version}</docker.image.tag>
+        <raspberry.pi.ip>192.168.1.100</raspberry.pi.ip>
+        <raspberry.pi.user>pi</raspberry.pi.user>
+        <raspberry.pi.dest>/home/pi/</raspberry.pi.dest>
+    </properties>
+    
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.example.gestionphotos.GestionPhotosApplication</mainClass>
+                </configuration>
+            </plugin>
+
+            <!-- Plugin pour builder et deployer l'image Docker -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <!-- Build l'image Docker automatiquement apres mvn package -->
+                    <execution>
+                        <id>build-docker-image</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>docker</executable>
+                            <arguments>
+                                <argument>build</argument>
+                                <argument>--platform</argument>
+                                <argument>linux/arm64</argument>
+                                <argument>-t</argument>
+                                <argument>${docker.image.name}:${docker.image.tag}</argument>
+                                <argument>.</argument>
+                            </arguments>
+                            <successCodes>0</successCodes>
+                        </configuration>
+                    </execution>
+
+                    <!-- Exporte et transfere l'image Docker sur mvn deploy -->
+                    <execution>
+                        <id>deploy-docker-image</id>
+                        <phase>deploy</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>bash</executable>
+                            <arguments>
+                                <argument>-c</argument>
+                                <argument>docker save ${docker.image.name}:${docker.image.tag} > target/${docker.image.name}-${docker.image.tag}.tar &amp;&amp; scp target/${docker.image.name}-${docker.image.tag}.tar ${raspberry.pi.user}@${raspberry.pi.ip}:${raspberry.pi.dest}</argument>
+                            </arguments>
+                            <successCodes>0</successCodes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
