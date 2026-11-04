@@ -1,12 +1,19 @@
 server:
   port: 8080
+  tomcat:
+    # Limite Tomcat sur le nombre total de "parts" d'une requête multipart.
+    # Elle est vérifiée pendant le parsing, AVANT que le contrôleur ne soit
+    # appelé. Chaque photo envoyée à /upload/multiple-with-date compte pour
+    # 2 parts (le fichier + son champ creationDates) : pour 100 photos il
+    # faut donc au moins 200 parts.
+    max-part-count: 210
 
 app:
   storage:
     path: "${APP_STORAGE_PATH:./photos-storage}"
   upload:
     max-file-size: 1073741824
-    max-files-per-upload: 10
+    max-files-per-upload: 100
     allowed-mime-types: image/jpeg,image/png,image/gif,image/webp,image/jpg
 
 spring:
