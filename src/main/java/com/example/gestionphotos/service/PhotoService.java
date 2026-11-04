@@ -50,13 +50,9 @@ public class PhotoService {
     public PhotoDto uploadPhoto(MultipartFile file) throws IOException {
         validateFile(file);
         
-        String storedPath = fileStorageService.store(file);
-        // Extraire la date de creation depuis le nom de fichier (format: YYYYMMDD_HHmmss_UUID8.ext)
-        String fileName = Path.of(storedPath).getFileName().toString();
-        LocalDateTime creationDate = PhotoTimestampUtils.extractPhotoTimestamp(fileName)
-                .orElse(LocalDateTime.now());
+        StoredPhoto storedPhoto = fileStorageService.store(file, null);
         
-        return doUploadPhoto(file, storedPath, creationDate);
+        return doUploadPhoto(file, storedPhoto);
     }
 
     /**
@@ -100,33 +96,32 @@ public class PhotoService {
     public PhotoDto uploadPhotoWithDate(MultipartFile file, LocalDateTime creationDate) throws IOException {
         validateFile(file);
         
-        String storedPath = fileStorageService.store(file);
+        StoredPhoto storedPhoto = fileStorageService.store(file, creationDate);
         
-        return doUploadPhoto(file, storedPath, creationDate);
+        return doUploadPhoto(file, storedPhoto);
     }
 
     /**
      * Methode interne commune pour creer un PhotoDto apres validation et sauvegarde.
+     * Les metadonnees de stockage (id, nom, chemin, date de creation) proviennent
+     * directement du StoredPhoto retourne par la couture de stockage.
      * 
      * @param file le fichier deja valide
-     * @param storedPath le chemin ou le fichier a ete sauvegarde
-     * @param creationDate la date de creation a utiliser
+     * @param storedPhoto les metadonnees de la photo sauvegardee
      * @return PhotoDto contenant les metadonnees de la photo
      */
-    private PhotoDto doUploadPhoto(MultipartFile file, String storedPath, LocalDateTime creationDate) {
-        String fileName = Path.of(storedPath).getFileName().toString();
-        String uuid = extractUuidFromFilename(fileName);
+    private PhotoDto doUploadPhoto(MultipartFile file, StoredPhoto storedPhoto) {
         LocalDateTime now = LocalDateTime.now();
         
         return new PhotoDto(
-            uuid,
+            storedPhoto.id(),
             file.getOriginalFilename(),
-            storedPath,
-            fileName,
+            storedPhoto.storedPath(),
+            storedPhoto.fileName(),
             file.getSize(),
             file.getContentType(),
             now,
-            creationDate
+            storedPhoto.creationDate()
         );
     }
 

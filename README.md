@@ -20,6 +20,7 @@ Backend (Spring Boot 4.0) → Port 8080
 ├── PhotoController      - Endpoints REST API
 ├── PhotoService         - Logique métier
 ├── FileStorageService   - Stockage des fichiers
+├── StoredPhoto          - Métadonnées d'une photo sauvegardée (couture PhotoService/FileStorageService)
 └── PhotoDto             - DTO pour les métadonnées
 
 Frontend (Angular 25) → Port 4200

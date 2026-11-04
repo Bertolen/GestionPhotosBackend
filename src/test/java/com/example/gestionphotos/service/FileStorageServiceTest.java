@@ -12,6 +12,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -49,7 +50,7 @@ class FileStorageServiceTest {
     // ==================== Tests pour store ====================
 
     @Test
-    void store_shouldSaveFileAndReturnRelativePath() throws IOException {
+    void store_shouldSaveFileAndReturnStoredPhoto() throws IOException {
         // Arrange
         String originalFilename = "test.jpg";
         byte[] content = "test content".getBytes();
@@ -58,14 +59,17 @@ class FileStorageServiceTest {
         when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream(content));
 
         // Act
-        String storedPath = fileStorageService.store(multipartFile);
+        StoredPhoto storedPhoto = fileStorageService.store(multipartFile, null);
 
         // Assert - le chemin doit etre juste le nom du fichier (format: YYYYMMDD_HHmmss_UUID8.ext)
-        assertNotNull(storedPath);
-        assertTrue(storedPath.matches("\\d{8}_\\d{6}_[a-f0-9]{8}\\.jpg"));
+        assertNotNull(storedPhoto);
+        assertTrue(storedPhoto.storedPath().matches("\\d{8}_\\d{6}_[a-f0-9]{8}\\.jpg"));
+        assertEquals(storedPhoto.storedPath(), storedPhoto.fileName());
+        assertNotNull(storedPhoto.id());
+        assertNotNull(storedPhoto.creationDate());
         
         // Verifier que le fichier existe
-        Path fullPath = fileStorageService.getRootLocation().resolve(storedPath);
+        Path fullPath = fileStorageService.getRootLocation().resolve(storedPhoto.storedPath());
         assertTrue(Files.exists(fullPath));
     }
 
@@ -76,14 +80,16 @@ class FileStorageServiceTest {
         when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("test".getBytes()));
 
         // Act
-        String storedPath = fileStorageService.store(multipartFile);
+        StoredPhoto storedPhoto = fileStorageService.store(multipartFile, null);
 
         // Assert - le nom de fichier doit commencer par 20260920_191817
-        assertTrue(storedPath.startsWith("20260920_191817_"));
-        assertTrue(storedPath.endsWith(".jpg"));
+        assertTrue(storedPhoto.fileName().startsWith("20260920_191817_"));
+        assertTrue(storedPhoto.fileName().endsWith(".jpg"));
+        // La date transportee est celle extraite du nom original
+        assertEquals(LocalDateTime.of(2026, 9, 20, 19, 18, 17), storedPhoto.creationDate());
         
         // Verifier que le fichier existe
-        Path fullPath = fileStorageService.getRootLocation().resolve(storedPath);
+        Path fullPath = fileStorageService.getRootLocation().resolve(storedPhoto.storedPath());
         assertTrue(Files.exists(fullPath));
     }
 
@@ -97,13 +103,13 @@ class FileStorageServiceTest {
                 .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
 
         // Act
-        String storedPath = fileStorageService.store(multipartFile);
+        StoredPhoto storedPhoto = fileStorageService.store(multipartFile, null);
 
         // Assert - le nom de fichier doit commencer par le timestamp d'aujourd'hui
-        assertTrue(storedPath.startsWith(todayTimestamp + "_"));
-        assertTrue(storedPath.endsWith(".jpg"));
+        assertTrue(storedPhoto.fileName().startsWith(todayTimestamp + "_"));
+        assertTrue(storedPhoto.fileName().endsWith(".jpg"));
         
-        Path fullPath = fileStorageService.getRootLocation().resolve(storedPath);
+        Path fullPath = fileStorageService.getRootLocation().resolve(storedPhoto.storedPath());
         assertTrue(Files.exists(fullPath));
     }
 
@@ -119,20 +125,72 @@ class FileStorageServiceTest {
                 .thenReturn(new ByteArrayInputStream("content2".getBytes()));
 
         // Act
-        String storedPath1 = fileStorageService.store(multipartFile);
-        String storedPath2 = fileStorageService.store(multipartFile);
+        StoredPhoto storedPhoto1 = fileStorageService.store(multipartFile, null);
+        StoredPhoto storedPhoto2 = fileStorageService.store(multipartFile, null);
 
         // Assert - les noms doivent etre differents
-        assertNotEquals(storedPath1, storedPath2);
+        assertNotEquals(storedPhoto1.storedPath(), storedPhoto2.storedPath());
         
         // Les timestamps doivent etre differents
-        assertTrue(storedPath1.startsWith("20260928_130000_"));
-        assertTrue(storedPath2.startsWith("20260928_140000_"));
+        assertTrue(storedPhoto1.fileName().startsWith("20260928_130000_"));
+        assertTrue(storedPhoto2.fileName().startsWith("20260928_140000_"));
         
-        Path fullPath1 = fileStorageService.getRootLocation().resolve(storedPath1);
-        Path fullPath2 = fileStorageService.getRootLocation().resolve(storedPath2);
+        Path fullPath1 = fileStorageService.getRootLocation().resolve(storedPhoto1.storedPath());
+        Path fullPath2 = fileStorageService.getRootLocation().resolve(storedPhoto2.storedPath());
         assertTrue(Files.exists(fullPath1));
         assertTrue(Files.exists(fullPath2));
+    }
+
+    @Test
+    void store_shouldNameFileFromForcedCreationDate() throws IOException {
+        // Arrange - date de creation forcee, nom original sans timestamp
+        LocalDateTime forcedDate = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+        when(multipartFile.getOriginalFilename()).thenReturn("vacances.jpg");
+        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("contenu".getBytes()));
+
+        // Act
+        StoredPhoto storedPhoto = fileStorageService.store(multipartFile, forcedDate);
+
+        // Assert - le fichier est nomme d'apres la date forcee et la date est transportee
+        assertNotNull(storedPhoto);
+        assertEquals(forcedDate, storedPhoto.creationDate());
+        assertTrue(storedPhoto.fileName().startsWith("20230615_103000_"));
+        assertTrue(storedPhoto.fileName().endsWith(".jpg"));
+        // L'id est l'UUID8 present dans le nom du fichier
+        assertTrue(storedPhoto.fileName().endsWith("_" + storedPhoto.id() + ".jpg"));
+        assertEquals(storedPhoto.fileName(), storedPhoto.storedPath());
+        assertTrue(Files.exists(fileStorageService.getRootLocation().resolve(storedPhoto.storedPath())));
+    }
+
+    @Test
+    void store_shouldPreferForcedCreationDateOverFilenameTimestamp() throws IOException {
+        // Arrange - le nom original contient un timestamp, mais une date forcee est fournie
+        LocalDateTime forcedDate = LocalDateTime.of(2019, 1, 2, 3, 4, 5);
+        when(multipartFile.getOriginalFilename()).thenReturn("20260920_191817.jpg");
+        when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("contenu".getBytes()));
+
+        // Act
+        StoredPhoto storedPhoto = fileStorageService.store(multipartFile, forcedDate);
+
+        // Assert - la date forcee gagne sur le timestamp du nom original
+        assertEquals(forcedDate, storedPhoto.creationDate());
+        assertTrue(storedPhoto.fileName().startsWith("20190102_030405_"));
+    }
+
+    @Test
+    void store_shouldRejectSecondPhotoWithSameForcedCreationDate() throws IOException {
+        // Arrange
+        LocalDateTime forcedDate = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+        when(multipartFile.getOriginalFilename()).thenReturn("vacances.jpg");
+        when(multipartFile.getInputStream())
+                .thenReturn(new ByteArrayInputStream("contenu1".getBytes()))
+                .thenReturn(new ByteArrayInputStream("contenu2".getBytes()));
+
+        fileStorageService.store(multipartFile, forcedDate);
+
+        // Act & Assert - une deuxieme photo avec la meme date forcee est un doublon
+        assertThrows(DuplicatePhotoException.class,
+                () -> fileStorageService.store(multipartFile, forcedDate));
     }
 
     @Test
@@ -145,12 +203,12 @@ class FileStorageServiceTest {
         when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("content".getBytes()));
         
         // Premier upload - le fichier sera sauvegarde avec le timestamp 20260920_191817
-        fileStorageService.store(multipartFile);
+        fileStorageService.store(multipartFile, null);
 
         // Act & Assert - le deuxieme upload avec le meme nom original
         // generera le meme timestamp, donc doit echouer
         when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("content2".getBytes()));
-        assertThrows(DuplicatePhotoException.class, () -> fileStorageService.store(multipartFile));
+        assertThrows(DuplicatePhotoException.class, () -> fileStorageService.store(multipartFile, null));
     }
 
 
@@ -162,7 +220,7 @@ class FileStorageServiceTest {
         when(multipartFile.getOriginalFilename()).thenReturn("test.jpg");
         when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("test".getBytes()));
         
-        String storedPath = fileStorageService.store(multipartFile);
+        String storedPath = fileStorageService.store(multipartFile, null).storedPath();
 
         // Act
         Path result = fileStorageService.load(storedPath);
@@ -179,7 +237,7 @@ class FileStorageServiceTest {
         when(multipartFile.getOriginalFilename()).thenReturn("test.jpg");
         when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("test".getBytes()));
         
-        String storedPath = fileStorageService.store(multipartFile);
+        String storedPath = fileStorageService.store(multipartFile, null).storedPath();
 
         // Act
         Path result = fileStorageService.load(storedPath);
@@ -197,7 +255,7 @@ class FileStorageServiceTest {
         when(multipartFile.getOriginalFilename()).thenReturn("test.jpg");
         when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("test".getBytes()));
         
-        String storedPath = fileStorageService.store(multipartFile);
+        String storedPath = fileStorageService.store(multipartFile, null).storedPath();
         Path filePath = fileStorageService.getRootLocation().resolve(storedPath);
         assertTrue(Files.exists(filePath));
 
@@ -226,7 +284,7 @@ class FileStorageServiceTest {
         when(multipartFile.getOriginalFilename()).thenReturn("test.jpg");
         when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("test".getBytes()));
         
-        String storedPath = fileStorageService.store(multipartFile);
+        String storedPath = fileStorageService.store(multipartFile, null).storedPath();
 
         // Act
         boolean result = fileStorageService.exists(storedPath);
@@ -254,7 +312,7 @@ class FileStorageServiceTest {
         when(multipartFile.getOriginalFilename()).thenReturn("test.jpg");
         when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream(content.getBytes()));
         
-        String storedPath = fileStorageService.store(multipartFile);
+        String storedPath = fileStorageService.store(multipartFile, null).storedPath();
 
         // Act
         long size = fileStorageService.getFileSize(storedPath);
@@ -316,8 +374,8 @@ class FileStorageServiceTest {
                 .thenReturn(new ByteArrayInputStream(content1.getBytes()))
                 .thenReturn(new ByteArrayInputStream(content2.getBytes()));
         
-        String path1 = fileStorageService.store(multipartFile);
-        String path2 = fileStorageService.store(multipartFile);
+        String path1 = fileStorageService.store(multipartFile, null).storedPath();
+        String path2 = fileStorageService.store(multipartFile, null).storedPath();
         
         // Act
         byte[] zipBytes = fileStorageService.createZipFromPaths(List.of(path1, path2));
@@ -367,7 +425,7 @@ class FileStorageServiceTest {
         when(multipartFile.getOriginalFilename()).thenReturn("valid.txt");
         when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream(content.getBytes()));
         
-        String validPath = fileStorageService.store(multipartFile);
+        String validPath = fileStorageService.store(multipartFile, null).storedPath();
         String nonExistentPath = "20240101_120000_nonexistent.txt";
         
         // Act
@@ -402,9 +460,9 @@ class FileStorageServiceTest {
                 .thenReturn(new ByteArrayInputStream("png content".getBytes()))
                 .thenReturn(new ByteArrayInputStream("txt content".getBytes()));
         
-        String path1 = fileStorageService.store(multipartFile);
-        String path2 = fileStorageService.store(multipartFile);
-        String path3 = fileStorageService.store(multipartFile);
+        String path1 = fileStorageService.store(multipartFile, null).storedPath();
+        String path2 = fileStorageService.store(multipartFile, null).storedPath();
+        String path3 = fileStorageService.store(multipartFile, null).storedPath();
         
         // Act
         byte[] zipBytes = fileStorageService.createZipFromPaths(List.of(path1, path2, path3));
@@ -439,14 +497,14 @@ class FileStorageServiceTest {
         when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream(content));
         
         // Etape 1: Upload initial
-        fileStorageService.store(multipartFile);
+        fileStorageService.store(multipartFile, null);
         
         // Etape 2: Re-upload avec le meme nom original
         // Le timestamp sera extrait du nom de fichier et sera identique
         when(multipartFile.getInputStream()).thenReturn(new ByteArrayInputStream("content2".getBytes()));
         
         // Act & Assert - doit lever DuplicatePhotoException
-        assertThrows(DuplicatePhotoException.class, () -> fileStorageService.store(multipartFile));
+        assertThrows(DuplicatePhotoException.class, () -> fileStorageService.store(multipartFile, null));
     }
 
 

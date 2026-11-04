@@ -38,22 +38,29 @@ public class FileStorageService {
     /**
      * Sauvegarde un fichier multipart dans le systeme de stockage.
      * Les fichiers sont nommes avec leur timestamp de creation : YYYYMMDD_HHmmss_[UUID8].ext
+     * Le fichier est nomme d'apres la date de creation fournie ; a defaut, le timestamp
+     * est extrait du nom original, sinon la date d'upload est utilisee.
      * 
      * @param file le fichier a sauvegarder
-     * @return le chemin relatif du fichier sauvegarde
+     * @param creationDate la date de creation a utiliser pour nommer le fichier,
+     *        ou null pour retomber sur le timestamp du nom original
+     * @return les metadonnees de la photo sauvegardee
      * @throws IOException en cas d'erreur de sauvegarde
      */
-    public String store(MultipartFile file) throws IOException {
+    public StoredPhoto store(MultipartFile file, LocalDateTime creationDate) throws IOException {
         String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
         String extension = getFileExtension(originalFilename);
         LocalDateTime uploadDate = LocalDateTime.now();
         
-        // Extraire le timestamp depuis le nom de fichier (si disponible) ou utiliser la date actuelle
-        LocalDateTime creationDateTime = PhotoTimestampUtils.extractPhotoTimestamp(originalFilename)
-                .orElse(uploadDate);
+        // Date de creation effective : celle fournie, sinon le timestamp du nom
+        // original (si disponible), sinon la date actuelle
+        LocalDateTime effectiveCreationDate = creationDate != null
+                ? creationDate
+                : PhotoTimestampUtils.extractPhotoTimestamp(originalFilename)
+                        .orElse(uploadDate);
         
         // Formater le timestamp au format YYYYMMDD_HHmmss
-        String timestamp = creationDateTime.format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+        String timestamp = effectiveCreationDate.format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
         
         // Verifier si une photo avec ce timestamp existe deja
         if (isAlreadyStoredByTimestamp(timestamp, extension)) {
@@ -77,9 +84,9 @@ public class FileStorageService {
 
         // Sauvegarder le fichier
         Files.copy(file.getInputStream(), destinationPath, StandardCopyOption.REPLACE_EXISTING);
-
-        // Retourner le chemin relatif
-        return fileName.replace('\\', '/');
+        
+        // Retourner les metadonnees de la photo sauvegardee
+        return new StoredPhoto(uniqueId, fileName, fileName.replace('\\', '/'), effectiveCreationDate);
     }
 
     /**

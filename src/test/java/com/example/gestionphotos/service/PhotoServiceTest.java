@@ -21,6 +21,7 @@ import java.time.LocalDateTime;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
@@ -54,6 +55,17 @@ class PhotoServiceTest {
     private static final String TEST_FILE_NAME = TEST_TIMESTAMP + "_" + TEST_UUID + ".jpg";
     private static final long TEST_SIZE = 1024L;
     private static final String TEST_MIME_TYPE = "image/jpeg";
+    private static final LocalDateTime TEST_CREATION_DATE = LocalDateTime.of(2024, 9, 22, 12, 30, 45);
+
+    private StoredPhoto testStoredPhoto() {
+        return new StoredPhoto(TEST_UUID, TEST_FILE_NAME, TEST_STORED_PATH, TEST_CREATION_DATE);
+    }
+
+    private StoredPhoto testStoredPhoto(String suffix, LocalDateTime creationDate) {
+        String id = TEST_UUID + suffix;
+        String fileName = TEST_TIMESTAMP + "_" + id + ".jpg";
+        return new StoredPhoto(id, fileName, fileName, creationDate);
+    }
 
 
     // ==================== Tests pour uploadPhoto ====================
@@ -64,12 +76,12 @@ class PhotoServiceTest {
         when(multipartFile.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME);
         when(multipartFile.getSize()).thenReturn(TEST_SIZE);
         when(multipartFile.getContentType()).thenReturn(TEST_MIME_TYPE);
-        when(fileStorageService.store(multipartFile)).thenReturn(TEST_STORED_PATH);
+        when(fileStorageService.store(multipartFile, null)).thenReturn(testStoredPhoto());
 
         // Act
         PhotoDto result = photoService.uploadPhoto(multipartFile);
 
-        // Assert
+        // Assert - le DTO est construit depuis le StoredPhoto retourne par le stockage
         assertNotNull(result);
         assertEquals(TEST_UUID, result.id());
         assertEquals(TEST_ORIGINAL_NAME, result.originalName());
@@ -78,25 +90,25 @@ class PhotoServiceTest {
         assertEquals(TEST_SIZE, result.size());
         assertEquals(TEST_MIME_TYPE, result.mimeType());
         assertNotNull(result.uploadDate());
-        assertNotNull(result.creationDate());
+        assertEquals(TEST_CREATION_DATE, result.creationDate());
     }
 
     @Test
-    void uploadPhoto_shouldExtractCreationDateFromTimestampInFilename() throws IOException {
-        // Arrange - fichier avec timestamp dans le nom
-        String timestampedFilename = "20240922_123045.jpg";
-        LocalDateTime expectedDate = LocalDateTime.of(2024, 9, 22, 12, 30, 45);
-        
-        when(multipartFile.getOriginalFilename()).thenReturn(timestampedFilename);
+    void uploadPhoto_shouldUseCreationDateReturnedByStorage() throws IOException {
+        // Arrange - la date de creation vient du StoredPhoto, pas d'une re-analyse du chemin
+        LocalDateTime storageDate = LocalDateTime.of(2025, 3, 1, 8, 15, 0);
+
+        when(multipartFile.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME);
         when(multipartFile.getSize()).thenReturn(TEST_SIZE);
         when(multipartFile.getContentType()).thenReturn(TEST_MIME_TYPE);
-        when(fileStorageService.store(multipartFile)).thenReturn(TEST_STORED_PATH);
+        when(fileStorageService.store(multipartFile, null))
+                .thenReturn(new StoredPhoto(TEST_UUID, TEST_FILE_NAME, TEST_STORED_PATH, storageDate));
 
         // Act
         PhotoDto result = photoService.uploadPhoto(multipartFile);
 
-        // Assert - la date de creation doit correspondre au timestamp extrait
-        assertEquals(expectedDate, result.creationDate());
+        // Assert
+        assertEquals(storageDate, result.creationDate());
     }
 
 
@@ -110,17 +122,17 @@ class PhotoServiceTest {
         when(multipartFile.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME);
         when(multipartFile.getSize()).thenReturn(TEST_SIZE);
         when(multipartFile.getContentType()).thenReturn(TEST_MIME_TYPE);
-        when(fileStorageService.store(multipartFile))
-                .thenReturn(TEST_STORED_PATH + "_1")
-                .thenReturn(TEST_STORED_PATH + "_2");
+        when(fileStorageService.store(multipartFile, null))
+                .thenReturn(testStoredPhoto("1", TEST_CREATION_DATE))
+                .thenReturn(testStoredPhoto("2", TEST_CREATION_DATE));
 
         // Act
         List<PhotoDto> result = photoService.uploadPhotos(files);
 
         // Assert
         assertEquals(2, result.size());
-        assertEquals(TEST_UUID, result.get(0).id());
-        assertEquals(TEST_UUID, result.get(1).id());
+        assertEquals(TEST_UUID + "1", result.get(0).id());
+        assertEquals(TEST_UUID + "2", result.get(1).id());
     }
 
     @Test
@@ -135,7 +147,7 @@ class PhotoServiceTest {
         when(validFile.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME);
         when(validFile.getSize()).thenReturn(TEST_SIZE);
         when(validFile.getContentType()).thenReturn(TEST_MIME_TYPE);
-        when(fileStorageService.store(validFile)).thenReturn(TEST_STORED_PATH);
+        when(fileStorageService.store(validFile, null)).thenReturn(testStoredPhoto());
 
         // Act
         List<PhotoDto> result = photoService.uploadPhotos(files);
@@ -143,8 +155,8 @@ class PhotoServiceTest {
         // Assert
         assertEquals(1, result.size());
         assertEquals(TEST_UUID, result.get(0).id());
-        verify(fileStorageService, times(1)).store(validFile);
-        verify(fileStorageService, never()).store(emptyFile);
+        verify(fileStorageService, times(1)).store(validFile, null);
+        verify(fileStorageService, never()).store(eq(emptyFile), any());
     }
 
     @Test
@@ -161,9 +173,9 @@ class PhotoServiceTest {
         when(validFile.getSize()).thenReturn(TEST_SIZE);
         when(validFile.getContentType()).thenReturn(TEST_MIME_TYPE);
         when(validFile.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME);
-        when(fileStorageService.store(duplicateFile))
+        when(fileStorageService.store(duplicateFile, null))
                 .thenThrow(new DuplicatePhotoException("La photo existe deja"));
-        when(fileStorageService.store(validFile)).thenReturn(TEST_STORED_PATH);
+        when(fileStorageService.store(validFile, null)).thenReturn(testStoredPhoto());
 
         // Act
         MultiplePhotoUploadException exception = assertThrows(
@@ -173,8 +185,8 @@ class PhotoServiceTest {
         // Assert
         assertEquals(1, exception.getUploadedPhotos().size());
         assertEquals(1, exception.getErrors().size());
-        verify(fileStorageService).store(duplicateFile);
-        verify(fileStorageService).store(validFile);
+        verify(fileStorageService).store(duplicateFile, null);
+        verify(fileStorageService).store(validFile, null);
     }
 
     @Test
@@ -190,7 +202,7 @@ class PhotoServiceTest {
 
         // Assert
         assertTrue(result.isEmpty());
-        verify(fileStorageService, never()).store(any());
+        verify(fileStorageService, never()).store(any(), any());
     }
 
 
@@ -464,7 +476,8 @@ class PhotoServiceTest {
         when(multipartFile.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME);
         when(multipartFile.getSize()).thenReturn(TEST_SIZE);
         when(multipartFile.getContentType()).thenReturn(TEST_MIME_TYPE);
-        when(fileStorageService.store(multipartFile)).thenReturn(TEST_STORED_PATH);
+        when(fileStorageService.store(multipartFile, specifiedDate))
+                .thenReturn(new StoredPhoto(TEST_UUID, TEST_FILE_NAME, TEST_STORED_PATH, specifiedDate));
 
         // Act
         PhotoDto result = photoService.uploadPhotoWithDate(multipartFile, specifiedDate);
@@ -563,9 +576,10 @@ class PhotoServiceTest {
         when(multipartFile.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME);
         when(multipartFile.getSize()).thenReturn(TEST_SIZE);
         when(multipartFile.getContentType()).thenReturn(TEST_MIME_TYPE);
-        when(fileStorageService.store(multipartFile))
-                .thenReturn(TEST_STORED_PATH + "_1")
-                .thenReturn(TEST_STORED_PATH + "_2");
+        when(fileStorageService.store(multipartFile, date1))
+                .thenReturn(testStoredPhoto("1", date1));
+        when(fileStorageService.store(multipartFile, date2))
+                .thenReturn(testStoredPhoto("2", date2));
 
         // Act
         List<PhotoDto> result = photoService.uploadPhotosWithDates(files, List.of(date1, date2));
@@ -640,8 +654,10 @@ class PhotoServiceTest {
         when(validFile2.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME + "2");
         when(validFile2.getSize()).thenReturn(TEST_SIZE);
         when(validFile2.getContentType()).thenReturn(TEST_MIME_TYPE);
-        when(fileStorageService.store(validFile1)).thenReturn(TEST_STORED_PATH + "_1");
-        when(fileStorageService.store(validFile2)).thenReturn(TEST_STORED_PATH + "_2");
+        when(fileStorageService.store(validFile1, date2))
+                .thenReturn(testStoredPhoto("1", date2));
+        when(fileStorageService.store(validFile2, date3))
+                .thenReturn(testStoredPhoto("2", date3));
 
         // Act
         List<PhotoDto> result = photoService.uploadPhotosWithDates(
@@ -651,7 +667,31 @@ class PhotoServiceTest {
         assertEquals(2, result.size());
         assertEquals(date2, result.get(0).creationDate());
         assertEquals(date3, result.get(1).creationDate());
-        verify(fileStorageService, never()).store(emptyFile);
+        verify(fileStorageService, never()).store(eq(emptyFile), any());
+    }
+
+    @Test
+    void uploadPhotosWithDates_shouldAggregateDuplicateErrors() throws IOException {
+        // Arrange - deux fichiers avec la meme date forcee : le deuxieme est un doublon
+        LocalDateTime date = LocalDateTime.of(2023, 6, 15, 10, 30, 0);
+        MultipartFile[] files = new MultipartFile[]{multipartFile, multipartFile};
+
+        when(multipartFile.isEmpty()).thenReturn(false);
+        when(multipartFile.getOriginalFilename()).thenReturn(TEST_ORIGINAL_NAME);
+        when(multipartFile.getSize()).thenReturn(TEST_SIZE);
+        when(multipartFile.getContentType()).thenReturn(TEST_MIME_TYPE);
+        when(fileStorageService.store(multipartFile, date))
+                .thenReturn(testStoredPhoto())
+                .thenThrow(new DuplicatePhotoException("La photo existe deja"));
+
+        // Act
+        MultiplePhotoUploadException exception = assertThrows(
+                MultiplePhotoUploadException.class,
+                () -> photoService.uploadPhotosWithDates(files, List.of(date, date)));
+
+        // Assert - la premiere photo est sauvegardee, l'erreur du doublon est agregee
+        assertEquals(1, exception.getUploadedPhotos().size());
+        assertEquals(1, exception.getErrors().size());
     }
 
 
