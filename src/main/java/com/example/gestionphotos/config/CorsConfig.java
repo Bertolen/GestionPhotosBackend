@@ -8,7 +8,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 /**
  * Configuration globale CORS pour autoriser les requêtes depuis le frontend
  * Angular. En développement : http://localhost:4200 En production : à adapter
- * selon le domaine.
+ * selon le domaine
  */
 @Configuration
 public class CorsConfig {
