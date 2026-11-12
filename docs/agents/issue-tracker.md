@@ -1,34 +1,26 @@
-# Issue tracker: GitHub
+# Issue tracker: GitLab
 
-Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
+Issues and specs for this repo live as GitLab issues (`nuestra-traviesa/GestionPhotosBackend`). Use the `glab` CLI for all operations. The GitHub repo (`Bertolen/GestionPhotosBackend`) is a read-only archive: its issues #1-5 are closed and point to their GitLab twins.
 
 ## Conventions
 
-- **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
-- **Read an issue**: `gh issue view <number> --json number,title,body,labels,comments`.
-- **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
-- **Make an issue a sub-issue of a parent**: `gh issue create --parent <parent> ...`, or `gh issue edit <parent> --add-sub-issue <child>` afterwards (`gh` 2.94+). Older `gh`: `gh api --method POST repos/<owner>/<repo>/issues/<parent>/sub_issues -F sub_issue_id=<child-db-id>` (database id, as in **Blocking** below). Without sub-issues, put `Part of #<parent>` at the top of the child body.
-- **Comment on an issue**: `gh issue comment <number> --body "..."`
-- **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
-- **Close**: `gh issue close <number> --comment "..."`
+- **Create an issue**: `glab api --method POST projects/nuestra-traviesa%2FGestionPhotosBackend/issues -f title="..." -f description="..." -f labels=<label>`. For multi-line or accented bodies on Windows, read the body from a UTF-8 file (`Get-Content -Raw -Encoding UTF8 <file>`) and pass it as `-f description="$body"` — never inline French accents in a `.ps1` literal (PowerShell 5.1 reads `.ps1` files as ANSI).
+- **Read an issue**: `glab api projects/nuestra-traviesa%2FGestionPhotosBackend/issues/<iid>`.
+- **List issues**: `glab api "projects/nuestra-traviesa%2FGestionPhotosBackend/issues?state=opened&per_page=100"`.
+- **Comment on an issue**: `glab api --method POST projects/nuestra-traviesa%2FGestionPhotosBackend/issues/<iid>/notes -f body="..."`.
+- **Apply / remove labels**: `glab api --method PUT projects/nuestra-traviesa%2FGestionPhotosBackend/issues/<iid> -f add_labels=wayfinder:research` / `-f remove_labels=...`.
+- **Close**: `glab api --method PUT projects/nuestra-traviesa%2FGestionPhotosBackend/issues/<iid> -f state_event=close`.
+- **Assign (claim)**: `glab api --method PUT projects/nuestra-traviesa%2FGestionPhotosBackend/issues/<iid> -f "assignee_ids[]=43638255"` (Bertolen).
 
-Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
+**PowerShell 5.1 caveat**: it strips embedded double quotes in native-command args. For GraphQL queries, run `glab.exe` from a WSL bash *script file* (never `-c` one-liners from PowerShell): `bash /mnt/c/Users/Bertolen/AppData/Local/Temp/opencode/<script>.sh` with `GLAB="/mnt/c/Users/Bertolen/AppData/Local/Programs/glab/glab.exe"`.
 
 ## Pull requests as a triage surface
 
-**PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
-
-When set to `yes`, PRs run through the same labels and states as issues, using the `gh pr` equivalents:
-
-- **Read a PR**: `gh pr view <number> --comments` and `gh pr diff <number>` for the diff.
-- **List external PRs for triage**: `gh api --paginate 'repos/{owner}/{repo}/pulls?state=open' --jq '.[] | select(.author_association | IN("OWNER","MEMBER","COLLABORATOR") | not) | {number, title, author: .user.login, author_association, labels: [.labels[].name]}'`.
-- **Comment / label / close**: `gh pr comment`, `gh pr edit --add-label`/`--remove-label`, `gh pr close`.
-
-GitHub shares one number space across issues and PRs, so a bare `#42` may be either: resolve with `gh pr view 42` and fall back to `gh issue view 42`.
+**PRs as a request surface: no.** _(Les merge requests GitLab sont un usage interne uniquement.)_
 
 ## When a skill says "publish to the issue tracker"
 
-Create a GitHub issue.
+Create a GitLab issue (see **Create an issue** above).
 
 ## When a skill says "fetch the relevant ticket"
 
@@ -36,11 +28,11 @@ Read it as in **Read an issue** above.
 
 ## Wayfinding operations
 
-Used by `/wayfinder`. The **map** is a single issue with **child** issues as tickets.
+Used by `/wayfinder`. The **map** is a single issue labelled `wayfinder:map`; its tickets are issues of the same project.
 
-- **Map**: a single issue labelled `wayfinder:map`, holding the Notes / Decisions-so-far / Fog body. `gh issue create --label wayfinder:map`.
-- **Child ticket**: an issue linked to the map as a GitHub sub-issue (see **Make an issue a sub-issue of a parent**). Where sub-issues aren't enabled, add the child to a task list in the map body and put `Part of #<map>` at the top of the child body. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). Once claimed, the ticket is assigned to the driving dev.
-- **Blocking**: GitHub's **native issue dependencies**, the canonical, UI-visible representation. Add an edge with `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where `<blocker-db-id>` is the blocker's numeric **database id** (`gh api repos/<owner>/<repo>/issues/<n> --jq .id`, _not_ the `#number` or `node_id`). GitHub reports `issue_dependencies_summary.blocked_by` (open blockers only, the live gate). Where dependencies aren't available, fall back to a `Blocked by: #<n>, #<n>` line at the top of the child body. A ticket is unblocked when every blocker is closed.
-- **Frontier query**: list the map's open children (`gh issue list --state open`, scoped to the map's sub-issues / task list), drop any with an open blocker (`issue_dependencies_summary.blocked_by > 0`, or an open issue in the `Blocked by` line) or an assignee; first in map order wins.
-- **Claim**: `gh issue edit <n> --add-assignee @me`, the session's first write.
-- **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
+- **Map**: a single issue labelled `wayfinder:map`, holding the Notes / Decisions-so-far / Fog body. Create as any other issue with `-f labels=wayfinder:map`.
+- **Child ticket**: an issue in the same project. GitLab does not allow ISSUE-type work items as children of an ISSUE parent (`workItemsHierarchyReorder` rejects it — only TASK children are allowed), so the parent/child relation is expressed by convention: a task list of the tickets in the map body, and `Part of #<map-iid>` at the top of each ticket body. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). Once claimed, the ticket is assigned to the driving dev.
+- **Blocking**: native issue links. `glab api --method POST projects/nuestra-traviesa%2FGestionPhotosBackend/issues/<child-iid>/links -f target_iid=<blocker-iid> -f link_type=is_blocked_by` — renders as « blocked by » in the GitLab UI. Fallback if the endpoint is unavailable: a `Bloqué par : #<n>` line at the top of the child body. A ticket is unblocked when every blocker is closed.
+- **Frontier query**: list the map's open tickets (`glab api "projects/.../issues?state=opened&per_page=100"`, keep those whose body starts with `Part of #<map-iid>`), drop any with an open blocker (`glab api projects/.../issues/<iid>/links`) or an assignee; first in map order wins.
+- **Claim**: assign the ticket to the driving dev (see **Assign** above), the session's first write.
+- **Resolve**: comment the answer on the ticket, close it, then append a context pointer (gist + link) to the map's Decisions-so-far.

@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-Issues are tracked in GitHub Issues (Bertolen/GestionPhotosBackend) via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues are tracked in GitLab Issues (nuestra-traviesa/GestionPhotosBackend) via the `glab` CLI. See `docs/agents/issue-tracker.md`. The GitHub repo (Bertolen/GestionPhotosBackend) is a read-only archive.
 
 ### Triage labels
 
