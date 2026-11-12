@@ -10,9 +10,11 @@ Issues and specs for this repo live as GitLab issues (`nuestra-traviesa/GestionP
 - **Comment on an issue**: `glab api --method POST projects/nuestra-traviesa%2FGestionPhotosBackend/issues/<iid>/notes -f body="..."`.
 - **Apply / remove labels**: `glab api --method PUT projects/nuestra-traviesa%2FGestionPhotosBackend/issues/<iid> -f add_labels=wayfinder:research` / `-f remove_labels=...`.
 - **Close**: `glab api --method PUT projects/nuestra-traviesa%2FGestionPhotosBackend/issues/<iid> -f state_event=close`.
-- **Assign (claim)**: `glab api --method PUT projects/nuestra-traviesa%2FGestionPhotosBackend/issues/<iid> -f "assignee_ids[]=43638255"` (Bertolen).
+- **Assign (claim)**: `glab api --method PUT projects/nuestra-traviesa%2FGestionPhotosBackend/issues/<iid> -F "assignee_ids=[43638255]"` (Bertolen). NB: the historical `-f "assignee_ids[]=..."` form fails on current glab (« a field name containing a bracket is not supported in a JSON request body ») — use `-F` with a JSON array.
 
 **PowerShell 5.1 caveat**: it strips embedded double quotes in native-command args. For GraphQL queries, run `glab.exe` from a WSL bash *script file* (never `-c` one-liners from PowerShell): `bash /mnt/c/Users/Bertolen/AppData/Local/Temp/opencode/<script>.sh` with `GLAB="/mnt/c/Users/Bertolen/AppData/Local/Programs/glab/glab.exe"`.
+
+**Git push caveat**: the `gitlab` remote is configured `remote.gitlab.mirror = true`, so `git push gitlab <refspec>` fails (« --mirror can't be combined with refspecs »). Either push mirror-style (`git push gitlab` — it also tries remote-tracking refs and shows benign « deny updating a hidden ref » errors), or push a refspec by explicit URL: `git push https://gitlab.com/nuestra-traviesa/GestionPhotosBackend.git <branch>`.
 
 ## Pull requests as a triage surface
 
