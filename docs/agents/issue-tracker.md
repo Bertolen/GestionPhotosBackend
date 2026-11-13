@@ -4,7 +4,7 @@ Issues and specs for this repo live as GitLab issues (`nuestra-traviesa/GestionP
 
 ## Conventions
 
-- **Create an issue**: `glab api --method POST projects/nuestra-traviesa%2FGestionPhotosBackend/issues -f title="..." -f description="..." -f labels=<label>`. For multi-line or accented bodies on Windows, read the body from a UTF-8 file (`Get-Content -Raw -Encoding UTF8 <file>`) and pass it as `-f description="$body"` — never inline French accents in a `.ps1` literal (PowerShell 5.1 reads `.ps1` files as ANSI).
+- **Create an issue**: `glab api --method POST projects/nuestra-traviesa%2FGestionPhotosBackend/issues -f title="..." -f description="..." -f labels=<label>`. For multi-line or accented bodies on Windows, read the body from a UTF-8 file (`Get-Content -Raw -Encoding UTF8 <file>`) and pass it as `-f description="$body"` — never inline French accents in a `.ps1` literal (PowerShell 5.1 reads `.ps1` files as ANSI). This only works while the body contains no `"` — otherwise use the WSL bash workaround (Windows caveats, n° 1 below).
 - **Read an issue**: `glab api projects/nuestra-traviesa%2FGestionPhotosBackend/issues/<iid>`.
 - **List issues**: `glab api "projects/nuestra-traviesa%2FGestionPhotosBackend/issues?state=opened&per_page=100"`.
 - **Comment on an issue**: `glab api --method POST projects/nuestra-traviesa%2FGestionPhotosBackend/issues/<iid>/notes -f body="..."`.
@@ -12,7 +12,11 @@ Issues and specs for this repo live as GitLab issues (`nuestra-traviesa/GestionP
 - **Close**: `glab api --method PUT projects/nuestra-traviesa%2FGestionPhotosBackend/issues/<iid> -f state_event=close`.
 - **Assign (claim)**: `glab api --method PUT projects/nuestra-traviesa%2FGestionPhotosBackend/issues/<iid> -F "assignee_ids=[43638255]"` (Bertolen). NB: the historical `-f "assignee_ids[]=..."` form fails on current glab (« a field name containing a bracket is not supported in a JSON request body ») — use `-F` with a JSON array.
 
-**PowerShell 5.1 caveat**: it strips embedded double quotes in native-command args. For GraphQL queries, run `glab.exe` from a WSL bash *script file* (never `-c` one-liners from PowerShell): `bash /mnt/c/Users/Bertolen/AppData/Local/Temp/opencode/<script>.sh` with `GLAB="/mnt/c/Users/Bertolen/AppData/Local/Programs/glab/glab.exe"`.
+**Windows / PowerShell 5.1 caveats** (all three verified empirically):
+
+1. **Input — args containing `"`**: PowerShell does not escape embedded double quotes in native-command args, so the value is split on the command line (`glab api … -f body=…` → « ERROR … accepts 1 arg(s), received 17 »). Any `-f`/`-F` value with a `"` inside is affected — GraphQL queries, but also issue bodies carrying bash/YAML snippets. Workaround: run `glab.exe` from a WSL bash *script file* (never `-c` one-liners from PowerShell): `bash /mnt/c/Users/Bertolen/AppData/Local/Temp/opencode/<script>.sh` with `GLAB="/mnt/c/Users/Bertolen/AppData/Local/Programs/glab/glab.exe"`, reading the body with `-f body="$(cat <file>)"`.
+2. **Output — console decoding**: when PowerShell *captures* native output (piping glab JSON into `ConvertFrom-Json` or a variable), it decodes the bytes with the console OEM codepage (CP850 on French Windows). The mojibake is invisible when the value is merely echoed back to the session (CP850→CP850 round-trip), but it persists as soon as the string is written to a file or used as data (symptom: « synchronis├®s »). Fix: `[Console]::OutputEncoding = [Text.Encoding]::UTF8` as the first statement of the command.
+3. **Files — UTF-8 without BOM**: PS 5.1 `Out-File`/`Set-Content -Encoding UTF8` prepend a BOM, which bash `cat` then passes through into the request body. When writing a body file from PowerShell for workaround 1, use `[IO.File]::WriteAllText($path, $content, (New-Object System.Text.UTF8Encoding($false)))`. (`Get-Content -Raw -Encoding UTF8` strips the BOM when reading, so the create-issue pattern above is safe.)
 
 **Git push caveat**: the `gitlab` remote is configured `remote.gitlab.mirror = true`, so `git push gitlab <refspec>` fails (« --mirror can't be combined with refspecs »). Either push mirror-style (`git push gitlab` — it also tries remote-tracking refs and shows benign « deny updating a hidden ref » errors), or push a refspec by explicit URL: `git push https://gitlab.com/nuestra-traviesa/GestionPhotosBackend.git <branch>`.
 
