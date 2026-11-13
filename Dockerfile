@@ -10,14 +10,12 @@ FROM --platform=$BUILDPLATFORM maven:3.9-eclipse-temurin-21 AS builder
 WORKDIR /app
 
 # Couches de dépendances seules d'abord (invalidées seulement si pom.xml change).
-# -Dexec.skip=true : le pom exécute un docker build sur la phase package
-# (héritage de l'ancien flux manuel) ; pas de daemon Docker ici.
 COPY pom.xml ./
 RUN mvn -B -DskipTests dependency:go-offline
 
 # Sources et package.
 COPY src ./src
-RUN mvn -B package -DskipTests -Dexec.skip=true
+RUN mvn -B package -DskipTests
 
 # --- Stage 2 : image finale JRE 21 (ARM64, Raspberry Pi 3 B+) ---
 FROM eclipse-temurin:21-jre-jammy
