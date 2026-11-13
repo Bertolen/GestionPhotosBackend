@@ -1,0 +1,166 @@
+# Pipeline CI/CD GestionPhotos Backend — spec : issue #15
+#
+# - Merge request : mvn verify (compilation, 103 tests, package) + build de
+#   l'image Docker ARM64 (validation, sans publication).
+# - Push/merge sur master : idem + publication dans le Container Registry
+#   (SHA court + latest) + déploiement automatique sur la Raspberry Pi
+#   (runner auto-hébergé taggé « rpi ») + smoke test sur GET /api/photos/status.
+# - Pas de pipeline pour les autres pushes de branche (pas de doublon branche + MR).
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "master"
+
+stages:
+  - verify
+  - deploy
+
+default:
+  interruptible: true
+
+# --- Étape 1 : vérification (runners partagés GitLab.com) ---
+
+build:
+  stage: verify
+  image: maven:3.9-eclipse-temurin-21
+  variables:
+    # Le repo local Maven vit dans le cache GitLab (clé = pom.xml).
+    MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  cache:
+    key:
+      files:
+        - pom.xml
+    paths:
+      - .m2/repository/
+  script:
+    # -Dexec.skip=true (intérim) : le pom exécute un docker build sur la phase
+    # package (héritage de l'ancien flux manuel) et il n'y a pas de daemon
+    # Docker dans l'image Maven. À retirer avec le plugin exec (issue #15).
+    - mvn -B verify -Dexec.skip=true
+
+docker-build:
+  stage: verify
+  image: docker:27
+  services:
+    - docker:27-dind
+  variables:
+    # TLS dind désactivé (config standard GitLab) : le daemon n'est joignable que
+    # dans le réseau privé éphémère du job, et buildx s'en trouve simplifié.
+    DOCKER_TLS_CERTDIR: ""
+  script:
+    # Émulation QEMU pour la plateforme ARM64 (le stage builder du Dockerfile
+    # reste natif grâce à --platform=$BUILDPLATFORM, seul le stage final est arm64).
+    - docker run --privileged --rm tonistiigi/binfmt --install arm64
+    - docker buildx create --use --name builder
+    # Sur master uniquement : publication de l'image (SHA court + latest) dans le
+    # registry avec le jeton CI automatique. Sur MR : build de validation, sans
+    # publication.
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "master" ]; then
+        docker login -u gitlab-ci-token -p "$CI_JOB_TOKEN" "$CI_REGISTRY"
+        docker buildx build --platform linux/arm64 \
+          -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" \
+          -t "$CI_REGISTRY_IMAGE:latest" \
+          --push .
+      else
+        docker buildx build --platform linux/arm64 \
+          -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" \
+          -t "$CI_REGISTRY_IMAGE:latest" \
+          .
+      fi
+
+# --- Étape 2 : déploiement sur la Raspberry Pi (master uniquement) ---
+
+deploy:
+  stage: deploy
+  tags:
+    - rpi
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
+  environment:
+    name: production
+    url: http://nuestra-traviesa:8080/api/photos/status
+  resource_group: production
+  variables:
+    # Image publiée par le job docker-build de cette même pipeline.
+    # Le rollback GitLab relance ce job avec le SHA du commit précédent.
+    BACKEND_IMAGE: "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+    # Surchargeables dans Settings > CI/CD > Variables sans toucher au YAML.
+    DISK_MOUNT: /mnt/disque
+  script:
+    # Garde .env : configuration partagée des deux stacks, lue par compose
+    # (créé/étendu par le wizard scripts/setup-pi-runner.sh).
+    - |
+      set -e
+      ENV_FILE="${PI_ENV_FILE:-/home/pi/gestion-photos/.env}"
+      if [ ! -f "$ENV_FILE" ]; then
+        echo "ERREUR: $ENV_FILE introuvable."
+        echo "Lancez le wizard d'installation sur la Pi : scripts/setup-pi-runner.sh"
+        exit 1
+      fi
+    # Garde disque AVANT toute opération Docker (login, pull de ~250 Mo) :
+    # sans disque externe, Docker créerait le chemin sur la carte SD et les
+    # photos atterriraient au mauvais endroit, silencieusement.
+    - |
+      set -e
+      ENV_FILE="${PI_ENV_FILE:-/home/pi/gestion-photos/.env}"
+      # Tentative de remontage sans sudo (option fstab « user », posée par le wizard).
+      mount "$DISK_MOUNT" >/dev/null 2>&1 || true
+      if ! mountpoint -q "$DISK_MOUNT"; then
+        echo "ERREUR: le disque externe $DISK_MOUNT n'est pas monté."
+        echo "Montez-le (ou relancez scripts/setup-pi-runner.sh), puis redéployez :"
+        echo "le déploiement s'arrête ici pour protéger les photos."
+        exit 1
+      fi
+      PHOTO_STORAGE_PATH="$(grep -E '^PHOTO_STORAGE_PATH=' "$ENV_FILE" | tail -n1 | cut -d= -f2-)"
+      PHOTO_STORAGE_PATH="${PHOTO_STORAGE_PATH:-/mnt/disque/photo-storage}"
+      if [ ! -d "$PHOTO_STORAGE_PATH" ]; then
+        echo "ERREUR: le répertoire de stockage $PHOTO_STORAGE_PATH est introuvable sur $DISK_MOUNT."
+        echo "Vérifiez PHOTO_STORAGE_PATH dans $ENV_FILE."
+        exit 1
+      fi
+      echo "Disque externe monté : $DISK_MOUNT (photos dans $PHOTO_STORAGE_PATH)."
+    # Déploiement : login registry, pull, remplacement de l'éventuel conteneur
+    # manuel, compose up. Un conteneur inconnu occupant le 8080 n'est jamais
+    # supprimé : up -d échouera en rouge sur le conflit de port.
+    # (Bloc unique : un item inline contenant « : » serait parsé comme un map YAML.)
+    - |
+      set -e
+      ENV_FILE="${PI_ENV_FILE:-/home/pi/gestion-photos/.env}"
+      docker login -u gitlab-ci-token -p "$CI_JOB_TOKEN" "$CI_REGISTRY"
+      docker compose --env-file "$ENV_FILE" pull backend
+      # Si un conteneur démarré manuellement (hors compose) porte déjà le nom,
+      # on le retire : compose doit gérer ce nom (ex: conteneur de secours deploy.sh).
+      if docker inspect gestion-photos-backend >/dev/null 2>&1; then
+        if [ -z "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' gestion-photos-backend 2>/dev/null)" ]; then
+          echo "Conteneur manuel existant détecté, remplacement par le conteneur compose..."
+          docker rm -f gestion-photos-backend
+        fi
+      fi
+      docker compose --env-file "$ENV_FILE" up -d --remove-orphans
+      echo "Image déployée : $BACKEND_IMAGE"
+    # Smoke test : le port 8080 doit servir le backend Spring Boot, pas l'index
+    # Angular (l'inverse du smoke frontend). Budget de démarrage élargi : JVM
+    # sur Pi 3 B+ (10 essais × ~15 s ≈ 2,5 min max).
+    - |
+      set -e
+      ok=""
+      for i in $(seq 1 10); do
+        if curl -fsS --max-time 10 http://localhost:8080/api/photos/status -o /tmp/smoke-backend.txt 2>/dev/null; then ok=1; break; fi
+        echo "Attente du backend (essai $i/10)..."
+        sleep 5
+      done
+      if [ -z "$ok" ]; then
+        echo "ERREUR: smoke test - pas de réponse HTTP sur localhost:8080"
+        exit 1
+      fi
+      if ! grep -q 'Service Photo est opérationnel' /tmp/smoke-backend.txt; then
+        echo "ERREUR: smoke test - le message attendu manque sur /api/photos/status"
+        exit 1
+      fi
+      if grep -qi '<app-root' /tmp/smoke-backend.txt; then
+        echo "ERREUR: smoke test - index Angular détecté sur le port 8080 (confusion de port/conteneur)"
+        exit 1
+      fi
+      echo "Smoke test OK : le backend Spring Boot est servi sur le port 8080"

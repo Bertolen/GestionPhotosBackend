@@ -1,10 +1,10 @@
 # Ignorer les fichiers inutiles pour le build Docker
 
-# Fichiers Maven
+# Fichiers Maven : multi-stage — le jar est construit par le stage builder,
+# tout target/ est ignoré (plus d'exception !target/*.jar).
+target/
 .tmp/
 *.jar
-target/*
-!target/*.jar
 pom.xml.versionsBackup
 
 # IDE
@@ -24,12 +24,18 @@ pom.xml.versionsBackup
 # Logs
 *.log
 
+# Configuration locale (le fallback deploy.sh crée un .env : jamais dans l'image)
+.env
+.env.local
+.env.*.local
+
 # Fichiers temporaires
 *.tmp
 *.swp
 
 # Docker
 Dockerfile
+docker-compose*
 .dockerignore
 
 # Java

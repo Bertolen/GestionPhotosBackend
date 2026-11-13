@@ -38,6 +38,9 @@ dist/
 out-tsc/
 
 # Environment files
+.env
+.env.*
+!.env.example
 *.local
 
 # Test coverage

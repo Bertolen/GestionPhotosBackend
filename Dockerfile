@@ -1,17 +1,34 @@
-# Dockerfile pour l'application GestionPhotos sur Raspberry Pi 4 (ARM64)
-# Utilise une image JRE 21 légère pour ARM64
+# GestionPhotos Backend — image ARM64 pour la Raspberry Pi 3 B+ (prod).
+#
+# Multi-stage CI-first : le build Maven tourne en natif sur la plateforme du
+# builder (x86 sur les runners SaaS — zéro code sous QEMU, le jar Spring Boot
+# est du bytecode portable), seul le stage final est arm64.
 
-# Image de base : Eclipse Temurin JRE 21 pour ARM64
-FROM eclipse-temurin:21-jre-jammy
+# --- Stage 1 : build Maven (natif sur la plateforme du builder) ---
+FROM --platform=$BUILDPLATFORM maven:3.9-eclipse-temurin-21 AS builder
 
-# Répertoire de travail dans le conteneur
 WORKDIR /app
 
-# Copier le JAR généré par Maven
-COPY target/*.jar app.jar
+# Couches de dépendances seules d'abord (invalidées seulement si pom.xml change).
+# -Dexec.skip=true : le pom exécute un docker build sur la phase package
+# (héritage de l'ancien flux manuel) ; pas de daemon Docker ici.
+COPY pom.xml ./
+RUN mvn -B -DskipTests dependency:go-offline
 
-# Exposer le port de l'application (8080 par défaut pour Spring Boot)
+# Sources et package.
+COPY src ./src
+RUN mvn -B package -DskipTests -Dexec.skip=true
+
+# --- Stage 2 : image finale JRE 21 (ARM64, Raspberry Pi 3 B+) ---
+FROM eclipse-temurin:21-jre-jammy
+
+WORKDIR /app
+
+# Copier le JAR Spring Boot généré par le stage builder.
+COPY --from=builder /app/target/*.jar app.jar
+
+# Exposer le port de l'application (8080 par défaut pour Spring Boot).
 EXPOSE 8080
 
-# Commande de démarrage
+# Commande de démarrage.
 ENTRYPOINT ["java", "-jar", "app.jar"]
