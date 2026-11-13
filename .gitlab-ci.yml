@@ -34,10 +34,7 @@ build:
     paths:
       - .m2/repository/
   script:
-    # -Dexec.skip=true (intérim) : le pom exécute un docker build sur la phase
-    # package (héritage de l'ancien flux manuel) et il n'y a pas de daemon
-    # Docker dans l'image Maven. À retirer avec le plugin exec (issue #15).
-    - mvn -B verify -Dexec.skip=true
+    - mvn -B verify
 
 docker-build:
   stage: verify
