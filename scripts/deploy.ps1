@@ -111,21 +111,27 @@ echo "Vérification que le backend répond..."
 # ssh.exe n'est pas garanti depuis Windows. Le job deploy CI verifie lui le
 # message complet renvoye par /api/photos/status.
 ok=""
+# Fichier unique via mktemp : un chemin fixe peut appartenir a un autre
+# utilisateur (root) et faire echouer curl en erreur d'ecriture (exit 23).
+SMOKE_FILE="`$(mktemp /tmp/smoke-backend.XXXXXX)"
 for i in 1 2 3 4 5 6 7 8 9 10; do
-    if curl -fsS --max-time 10 http://localhost:${RaspberryDockerPort}/api/photos/status -o /tmp/smoke-backend.txt 2>/dev/null; then ok=1; break; fi
+    if curl -fsS --max-time 10 http://localhost:${RaspberryDockerPort}/api/photos/status -o "`$SMOKE_FILE" 2>/dev/null; then ok=1; break; fi
     echo "Attente du backend (essai `$i/10)..."
     sleep 5
 done
 if [ -z "`$ok" ]; then
     echo "ATTENTION: pas de réponse HTTP sur le port ${RaspberryDockerPort}."
     echo "Vérifiez: docker logs $ContainerName"
+    rm -f "`$SMOKE_FILE"
     exit 1
 fi
-if ! grep -q 'Service Photo est op' /tmp/smoke-backend.txt; then
+if ! grep -q 'Service Photo est op' "`$SMOKE_FILE"; then
     echo "ATTENTION: le backend ne répond pas le message attendu sur /api/photos/status."
     echo "Vérifiez: docker logs $ContainerName"
+    rm -f "`$SMOKE_FILE"
     exit 1
 fi
+rm -f "`$SMOKE_FILE"
 echo "Container démarré avec succès !"
 echo "Accès: http://${RaspberryHost}:${RaspberryDockerPort}"
 "@

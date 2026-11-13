@@ -77,22 +77,28 @@ ssh -p "$RASPBERRY_SSH_PORT" "${RASPBERRY_USER}@${RASPBERRY_HOST}" << EOF
     rm /tmp/${TAR_FILE}
 
     echo "Vérification que le backend répond..."
+    # Fichier unique via mktemp : un chemin fixe peut appartenir à un autre
+    # utilisateur (root) et faire échouer curl en erreur d'écriture (exit 23).
     ok=""
+    SMOKE_FILE="\$(mktemp /tmp/smoke-backend.XXXXXX)"
     for i in 1 2 3 4 5 6 7 8 9 10; do
-        if curl -fsS --max-time 10 http://localhost:${RASPBERRY_DOCKER_PORT}/api/photos/status -o /tmp/smoke-backend.txt 2>/dev/null; then ok=1; break; fi
+        if curl -fsS --max-time 10 http://localhost:${RASPBERRY_DOCKER_PORT}/api/photos/status -o "\$SMOKE_FILE" 2>/dev/null; then ok=1; break; fi
         echo "Attente du backend (essai \$i/10)..."
         sleep 5
     done
     if [ -z "\$ok" ]; then
         echo "ATTENTION: pas de réponse HTTP sur le port ${RASPBERRY_DOCKER_PORT}."
         echo "Vérifiez: docker logs ${CONTAINER_NAME}"
+        rm -f "\$SMOKE_FILE"
         exit 1
     fi
-    if ! grep -q 'Service Photo est opérationnel' /tmp/smoke-backend.txt; then
+    if ! grep -q 'Service Photo est opérationnel' "\$SMOKE_FILE"; then
         echo "ATTENTION: le backend ne répond pas le message attendu sur /api/photos/status."
         echo "Vérifiez: docker logs ${CONTAINER_NAME}"
+        rm -f "\$SMOKE_FILE"
         exit 1
     fi
+    rm -f "\$SMOKE_FILE"
     echo "Container démarré avec succès !"
     echo "Accès: http://${RASPBERRY_HOST}:${RASPBERRY_DOCKER_PORT}"
 EOF

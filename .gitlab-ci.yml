@@ -141,26 +141,37 @@ deploy:
       docker compose --env-file "$ENV_FILE" up -d --remove-orphans
       echo "Image déployée : $BACKEND_IMAGE"
     # Smoke test : le port 8080 doit servir le backend Spring Boot, pas l'index
-    # Angular (l'inverse du smoke frontend). Budget de démarrage élargi : JVM
-    # sur Pi 3 B+ (10 essais × ~15 s ≈ 2,5 min max).
+    # Angular (l'inverse du smoke frontend). Fichier unique via mktemp : un
+    # chemin fixe partagé avec le wizard root (setup-pi-runner.sh, étape 7) a
+    # fait échouer curl en erreur d'écriture (exit 23) sur un fichier root:root
+    # que gitlab-runner ne peut pas écraser dans /tmp (sticky bit).
+    # Budget : 30 essais × ~5 s ≈ 2,5 min (curl refused immédiat tant que la
+    # JVM de la Pi 3 B+ n'écoute pas ; Tomcat met ~20 s à démarrer).
     - |
       set -e
+      SMOKE_FILE="$(mktemp /tmp/smoke-backend.XXXXXX)"
       ok=""
-      for i in $(seq 1 10); do
-        if curl -fsS --max-time 10 http://localhost:8080/api/photos/status -o /tmp/smoke-backend.txt 2>/dev/null; then ok=1; break; fi
-        echo "Attente du backend (essai $i/10)..."
+      rc=0
+      for i in $(seq 1 30); do
+        if curl -fsS --max-time 10 http://localhost:8080/api/photos/status -o "$SMOKE_FILE" 2>/dev/null; then ok=1; break; fi
+        rc=$?
+        echo "Attente du backend (essai $i/30)..."
         sleep 5
       done
       if [ -z "$ok" ]; then
-        echo "ERREUR: smoke test - pas de réponse HTTP sur localhost:8080"
+        echo "ERREUR: smoke test - pas de réponse HTTP sur localhost:8080 (dernier code curl : $rc)"
+        rm -f "$SMOKE_FILE"
         exit 1
       fi
-      if ! grep -q 'Service Photo est opérationnel' /tmp/smoke-backend.txt; then
+      if ! grep -q 'Service Photo est opérationnel' "$SMOKE_FILE"; then
         echo "ERREUR: smoke test - le message attendu manque sur /api/photos/status"
+        rm -f "$SMOKE_FILE"
         exit 1
       fi
-      if grep -qi '<app-root' /tmp/smoke-backend.txt; then
+      if grep -qi '<app-root' "$SMOKE_FILE"; then
         echo "ERREUR: smoke test - index Angular détecté sur le port 8080 (confusion de port/conteneur)"
+        rm -f "$SMOKE_FILE"
         exit 1
       fi
+      rm -f "$SMOKE_FILE"
       echo "Smoke test OK : le backend Spring Boot est servi sur le port 8080"

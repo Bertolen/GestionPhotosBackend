@@ -334,14 +334,19 @@ if [ -z "$DEPLOYED" ]; then
 fi
 ok "Le conteneur compose tourne avec l'image du registry : $($SUDO docker inspect -f '{{.Config.Image}}' "$CONTAINER_NAME")"
 
+# Fichier unique via mktemp : le wizard tourne en root et un chemin fixe
+# laisserait derrière lui un fichier root:root qui fait échouer le job deploy
+# CI (gitlab-runner ne peut pas l'écraser dans /tmp sticky — curl exit 23).
 SMOKE_OK=""
+SMOKE_FILE="$(mktemp /tmp/smoke-backend.XXXXXX)"
 for i in $(seq 1 10); do
-    if curl -fsS --max-time 10 "$SMOKE_URL" -o /tmp/smoke-backend.txt 2>/dev/null \
-        && grep -q 'Service Photo est opérationnel' /tmp/smoke-backend.txt; then
+    if curl -fsS --max-time 10 "$SMOKE_URL" -o "$SMOKE_FILE" 2>/dev/null \
+        && grep -q 'Service Photo est opérationnel' "$SMOKE_FILE"; then
         SMOKE_OK=1; break
     fi
     sleep 5
 done
+rm -f "$SMOKE_FILE"
 if [ -z "$SMOKE_OK" ]; then
     fail "Le conteneur est lancé mais ne sert pas le message attendu sur $SMOKE_URL : docker logs $CONTAINER_NAME"
 fi
