@@ -114,11 +114,17 @@ app.upload.allowed-mime-types=image/jpeg,image/png,image/gif,image/webp,image/jp
 Le chemin `./photos-storage` créera un dossier dans le répertoire du projet.
 
 ### Pour la production sur Raspberry Pi
-La variable d'environnement `APP_STORAGE_PATH` remplace le chemin par défaut `./photos-storage` :
+
+La prod est une **Raspberry Pi 3 B+** (ARM64), hostname `nuestra-traviesa` (résolu par le DNS de la box) : le backend Spring Boot occupe le port **8080** (le frontend nginx occupe le 80).
+
+- L'image est publiée dans le **Container Registry GitLab** par la CI (tags = SHA court du commit + `latest`).
+- Le conteneur `gestion-photos-backend` (docker compose, `restart: unless-stopped`) revient tout seul après un reboot de la Pi.
+- `APP_STORAGE_PATH=/data/photos` est **fixé dans `docker-compose.yml`** : le conteneur sert toujours les photos depuis `/data/photos`.
+- Le chemin hôte est une variable d'exécution : `PHOTO_STORAGE_PATH` dans le `.env` de la Pi (défaut `/mnt/disque/photo-storage`, sur le disque externe monté sur `/mnt/disque`). Changer le chemin hôte ne nécessite ni rebuild ni variable de CI.
+
 ```bash
-docker run -e APP_STORAGE_PATH=/data/photos \
-  -v /home/pi/photo-storage:/data/photos \
-  -p 8080:8080 gestion-photos:0.0.1-SNAPSHOT
+# Sur la Pi (le .env est créé par scripts/setup-pi-runner.sh) :
+docker compose --env-file /home/pi/gestion-photos/.env up -d
 ```
 
 ## 📦 Dépendances
@@ -160,6 +166,37 @@ curl http://localhost:8080/api/photos
 
 # Télécharger une photo
 curl http://localhost:8080/api/photos/{id}/download --output photo.jpg
+```
+
+## 🚀 CI/CD & déploiement
+
+La chaîne est définie dans `.gitlab-ci.yml` (spec : issue #15), parité de la chaîne frontend :
+
+- **Merge request** : job `build` (`mvn -B verify` — compilation, 103 tests, package, cache `.m2`) et job `docker-build` (image Docker **ARM64** via buildx/QEMU, validation sans publication). Une MR dont la pipeline est rouge ne peut pas être mergée (merge check « Pipelines must succeed »).
+- **Push ou merge sur master** : les mêmes jobs + publication de l'image dans le Container Registry GitLab (jeton CI automatique, aucun secret manuel), puis **déploiement automatique sur la Pi** : garde disque externe → pull → remplacement de l'éventuel conteneur manuel → `docker compose up -d` → smoke test sur `GET /api/photos/status`.
+- Les builds tournent sur les **runners partagés GitLab.com** ; la Pi n'exécute que le job `deploy`, via un **group runner** `nuestra-traviesa` taggé `rpi` (ADR 0001), limité à 1 job à la fois.
+- **Rollback** (~2 min, sans rebuild) : Build > Environments > `production` > déploiement précédent > Rollback.
+
+Les pipelines ne se déclenchent que sur les MR et sur master ; la branche master n'est pas protégée (push directs autorisés, déployés s'ils passent build + tests).
+
+### Installation sur la Pi (une seule fois)
+
+Le wizard `scripts/setup-pi-runner.sh` est auto-vérifiant : prérequis (aarch64, Docker, plugin compose, disque externe), migration vers le group runner (ADR 0001), fstab du disque des photos (`nofail,user`), `.env` partagé (`PHOTO_STORAGE_PATH`), merge check, test de bout en bout, retraite de l'ancien runner.
+
+```bash
+ssh bertolen@nuestra-traviesa
+git clone https://gitlab.com/nuestra-traviesa/GestionPhotosBackend.git
+cd GestionPhotosBackend
+sudo bash scripts/setup-pi-runner.sh
+```
+
+### Déploiement manuel de secours (GitLab indisponible)
+
+Les scripts `scripts/deploy.sh` (bash) et `scripts/deploy.ps1` (PowerShell) construisent l'image ARM64, la transfèrent par scp et la démarrent sur la Pi avec `docker run` (même nom de conteneur que compose : le prochain déploiement CI le remplacera automatiquement) :
+
+```bash
+cp .env.example .env   # valeurs réelles déjà remplies
+./scripts/deploy.sh    # ou : powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1
 ```
 
 ## 📝 Notes

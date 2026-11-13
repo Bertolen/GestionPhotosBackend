@@ -1,0 +1,21 @@
+# Backend GestionPhotos — aligné sur la réalité de la prod :
+# backend Spring Boot sur le port 8080 (le frontend nginx occupe le 80).
+#
+# L'image vient du Container Registry GitLab lors des déploiements CI
+# (variable BACKEND_IMAGE), avec l'image locale en valeur de repli pour un
+# déploiement manuel de secours (scripts/deploy.sh).
+# APP_STORAGE_PATH est fixé ici (jamais dans le .env) : le conteneur sert
+# toujours les photos depuis /data/photos ; seul le chemin hôte
+# (PHOTO_STORAGE_PATH) est une variable d'exécution.
+
+services:
+  backend:
+    image: ${BACKEND_IMAGE:-gestion-photos:latest}
+    container_name: gestion-photos-backend
+    ports:
+      - "8080:8080"
+    environment:
+      APP_STORAGE_PATH: /data/photos
+    volumes:
+      - ${PHOTO_STORAGE_PATH:-/mnt/disque/photo-storage}:/data/photos
+    restart: unless-stopped
