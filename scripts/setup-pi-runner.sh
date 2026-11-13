@@ -31,6 +31,7 @@ DISK_DEVICE="${DISK_DEVICE:-/dev/sda1}"
 DISK_MOUNT="${DISK_MOUNT:-/mnt/disque}"
 CONTAINER_NAME="gestion-photos-backend"
 SMOKE_URL="http://localhost:8080/api/photos/status"
+CONFIG_FILE="/etc/gitlab-runner/config.toml"
 
 info() { echo -e "\e[1;34m[INFO]\e[0m $*"; }
 ok()   { echo -e "\e[1;32m[OK]\e[0m $*"; }
@@ -41,6 +42,19 @@ confirm() {
     local reponse
     read -rp "$1 (o/N) : " reponse
     case "$reponse" in [oO]|[oO]ui*) return 0 ;; *) return 1 ;; esac
+}
+
+# Paires « nom|token » des entrées [[runners]] du config.toml, dans l'ordre.
+# Le token est l'identifiant fiable d'un runner : le nom peut être dupliqué
+# entre entrées (vécu : 3 entrées « nuestra-traviesa » après des relances du
+# wizard), et « gitlab-runner unregister --name » ne retire que la première
+# correspondance. Le nom peut être vide (bloc incomplet édité à la main).
+runner_entries() {
+    $SUDO awk '
+        /^\[\[runners\]\]/ { name = "" }
+        /^ *name *= *"/ { line = $0; sub(/^ *name *= *"/, "", line); sub(/"$/, "", line); name = line }
+        /^ *token *= *"/ { line = $0; sub(/^ *token *= *"/, "", line); sub(/"$/, "", line); print name "|" line }
+    ' "$CONFIG_FILE" 2>/dev/null || true
 }
 
 trap 'echo -e "\e[1;31m[ERREUR]\e[0m Échec inattendu — voir le message ci-dessus." >&2' ERR
@@ -120,21 +134,33 @@ else
     echo
     [ -n "$RUNNER_TOKEN" ] || fail "Token vide. Créez le runner dans l'interface puis relancez le wizard."
 
-    # Le register AJOUTE une entrée au config.toml : l'ancien runner du projet
-    # frontend reste enregistré pendant la coexistence (repli instantané).
-    $SUDO gitlab-runner register --non-interactive \
-        --url "https://gitlab.com" \
-        --token "$RUNNER_TOKEN" \
-        --executor shell \
-        || fail "Enregistrement échoué. Vérifiez le token (un runner ne peut être enregistré qu'une fois) et la connexion à gitlab.com."
+    # Garde-fou doublon : le register AJOUTE une entrée [[runners]] au
+    # config.toml sans détecter un token déjà enregistré (vécu : le runner
+    # en double après des relances du wizard). Si le token y figure déjà,
+    # le runner est enregistré : pas de second register.
+    if $SUDO grep -qF -- "$RUNNER_TOKEN" "$CONFIG_FILE" 2>/dev/null; then
+        warn "Ce token est déjà présent dans $CONFIG_FILE : enregistrement sauté (pas de doublon)."
+        ok "Le group runner est déjà enregistré sur cette Pi."
+    else
+        # --name fixe le nom dans le config.toml (sans lui, le register prend
+        # le hostname de la Pi et le check « déjà enregistré » ci-dessus ne
+        # matche jamais aux relances). Le register AJOUTE une entrée : l'ancien
+        # runner du projet frontend reste enregistré pendant la coexistence
+        # (repli instantané).
+        $SUDO gitlab-runner register --non-interactive \
+            --url "https://gitlab.com" \
+            --token "$RUNNER_TOKEN" \
+            --name "$NEW_RUNNER_NAME" \
+            --executor shell \
+            || fail "Enregistrement échoué. Vérifiez le token (un runner ne peut être enregistré qu'une fois) et la connexion à gitlab.com."
 
-    $SUDO gitlab-runner verify >/dev/null 2>&1 \
-        || fail "Le runner ne parvient pas à contacter GitLab : sudo gitlab-runner verify pour le détail."
-    ok "Le group runner est enregistré et contacte GitLab."
+        $SUDO gitlab-runner verify >/dev/null 2>&1 \
+            || fail "Le runner ne parvient pas à contacter GitLab : sudo gitlab-runner verify pour le détail."
+        ok "Le group runner est enregistré et contacte GitLab."
+    fi
 fi
 
 # Un job à la fois sur la Pi (file FIFO partagée avec le frontend).
-CONFIG_FILE="/etc/gitlab-runner/config.toml"
 if $SUDO grep -q '^concurrent' "$CONFIG_FILE"; then
     $SUDO sed -i 's/^concurrent = .*/concurrent = 1/' "$CONFIG_FILE"
 else
@@ -369,8 +395,8 @@ if ! confirm "Retirer maintenant l'ancien runner ?"; then
     warn "L'ancien runner reste en pause comme repli instantané du frontend."
     info "Procédure à exécuter plus tard (les deux gestes sont indépendants et tous deux requis) :"
     echo "  1. Suppression dans l'UI GitLab : $FRONTEND_WEB_URL/-/settings/ci_cd (Settings > CI/CD > Runners) > ancien runner > Delete runner"
-    echo "  2. Unregister local : $SUDO gitlab-runner list  (identifier l'ancien), puis :"
-    echo "     $SUDO gitlab-runner unregister --name <nom-de-l'ancien>"
+    echo "  2. Unregister local : relancez ce wizard — il reprendra à cette étape et retirera"
+    echo "     l'ancien par token (sans ambiguïté si plusieurs entrées portent le même nom)."
 else
     echo
     info "Geste 1/2 : suppression dans l'UI GitLab..."
@@ -379,17 +405,50 @@ else
     confirm "Supprimé dans l'UI ?" || fail "Supprimez-le dans l'UI puis relancez le wizard (il reprendra à cette étape)."
     ok "Ancien runner supprimé de GitLab."
 
-    info "Geste 2/2 : unregister local..."
-    $SUDO gitlab-runner list
+    info "Geste 2/2 : unregister local (par token)..."
     echo
-    read -rp "Nom de l'ancien runner dans la liste ci-dessus (ex. gestion-photos-pi) : " OLD_RUNNER_NAME
-    [ -n "$OLD_RUNNER_NAME" ] || fail "Nom vide : relancez le wizard pour reprendre à cette étape."
-    $SUDO gitlab-runner unregister --name "$OLD_RUNNER_NAME" \
-        || fail "Unregister échoué : vérifiez le nom avec $SUDO gitlab-runner list."
-    if $SUDO gitlab-runner list 2>/dev/null | grep -q "$OLD_RUNNER_NAME"; then
-        fail "L'ancien runner apparaît toujours dans gitlab-runner list."
-    fi
-    ok "Ancien runner retiré de la configuration locale."
+    info "Retirez l'ancien runner, GARDEZ le nouveau (« $NEW_RUNNER_NAME »)."
+    info "Le retrait se fait par token : plusieurs entrées peuvent porter le"
+    info "même nom (vécu lors de la migration), le nom seul est ambigu."
+    echo
+    while :; do
+        mapfile -t RUNNER_LIST < <(runner_entries)
+        if [ "${#RUNNER_LIST[@]}" -eq 0 ]; then
+            fail "Plus aucun runner dans $CONFIG_FILE — le nouveau a peut-être été retiré par erreur. Relancez le wizard : l'étape 2 le re-registrera."
+        fi
+        i=1
+        for entry in "${RUNNER_LIST[@]}"; do
+            entry_name="${entry%%|*}"
+            entry_token="${entry#*|}"
+            echo "  $i) ${entry_name:-« sans nom »}   (token ${entry_token:0:12}...)"
+            i=$((i+1))
+        done
+        echo
+        read -rp "Numéro du runner à retirer (Entrée = terminé) : " CHOICE
+        if [ -z "$CHOICE" ]; then
+            break
+        fi
+        case "$CHOICE" in
+            *[!0-9]*) warn "Numéro invalide : entrez un numéro de la liste, ou Entrée pour terminer." ; continue ;;
+        esac
+        if [ "$CHOICE" -lt 1 ] || [ "$CHOICE" -gt "${#RUNNER_LIST[@]}" ]; then
+            warn "Numéro $CHOICE hors liste."
+            continue
+        fi
+        entry="${RUNNER_LIST[$((CHOICE-1))]}"
+        entry_name="${entry%%|*}"
+        entry_token="${entry#*|}"
+        $SUDO gitlab-runner unregister --token "$entry_token" \
+            || fail "Unregister échoué pour « $entry_name » (token ${entry_token:0:12}...)."
+        ok "Runner « $entry_name » retiré de la configuration locale."
+    done
+    $SUDO systemctl restart gitlab-runner
+    # Check final par validité, pas par nom (les noms peuvent se confondre) :
+    # l'ancien runner, supprimé côté GitLab au geste 1/2, ne passe pas verify ;
+    # le runner restant doit être « is valid ».
+    $SUDO gitlab-runner verify >/dev/null 2>&1 \
+        || fail "Le runner restant ne contacte pas GitLab (sudo gitlab-runner verify pour le détail). Le nouveau runner a peut-être été retiré à la place de l'ancien : relancez le wizard, l'étape 2 le re-registrera."
+    ok "Ancien runner retiré ; le runner restant contacte GitLab (« is valid »)."
 fi
 
 echo
